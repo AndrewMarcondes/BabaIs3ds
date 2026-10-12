@@ -1,0 +1,8 @@
+# game files: users supply their own copy
+Data/
+__pycache__/
+build/
+*.3dsx
+*.smdh
+*.elf
+hosttest
