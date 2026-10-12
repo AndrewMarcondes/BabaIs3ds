@@ -42,7 +42,11 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Save: ini at sdmc:/3ds/baba/save.ini, section = world.
 
 ## Next
-- Gates (MF_findgates + gateunlock timers; gates have COMPLETED < -1 when their requirement is met), unlock animation.
+- Gates/map clears are reconstructed (engine.mapprogress), not taken from the original: path `gate` 1 level clears
+  (`<world>_prize total`), 2 map clears (`<world>_clears total`), 3 orbs (`<world>_bonus total`, not counted yet), 4 clears on
+  this map; a map is cleared at `unlockcount` cleared levels. The original's gate animation (gateunlock, MF_findgates,
+  COMPLETED < -1 gate objects) is skipped: a met gate path is just saved open. Verify against the real game when possible.
+- Unlock animation.
 - Sound, music.
 - Animation: walk frame = VISUALDIR (movement.lua advances it), `animate()` turns it into unit.direction (DIR*8+VISUALDIR for tiling 2/3,
   VISUALDIR for 4). Engine calls animate() after turns and on a ~200ms timer; all sprites also wobble through _1/_2/_3 files on that timer.

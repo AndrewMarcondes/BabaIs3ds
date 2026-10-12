@@ -44,6 +44,7 @@ end
 assert(generaldata.strings[CURRLEVEL] == "106level", "win should return to the map, at " .. generaldata.strings[CURRLEVEL])
 assert(engine.ismap(), "106level should be a map")
 assert(MF_read("save", "baba", "0level") == "3", "win not saved")
+assert(MF_read("save", "baba_prize", "total") == "1", "a first win should count one level clear")
 print("on map; message: " .. engine.message:gsub("\n", " / "))
 
 local cursor = find("cursor")

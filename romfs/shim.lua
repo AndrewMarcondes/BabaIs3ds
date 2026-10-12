@@ -94,6 +94,8 @@ end
 
 function MF_setfile(storage, path) end -- files are chosen by the engine (gotolevel/boot)
 
+local function savenum(group, key) return tonumber(MF_read("save", group, key)) or 0 end
+
 ---------------------------------------------------------------- objects
 
 function MF_emptycreate(class, x, y)
@@ -298,10 +300,43 @@ function engine.loadlevel(level)
 	animate()
 	if engine.ismap() then
 		openlevels()
+		engine.mapprogress(g)
 		-- the reveal leaves new paths/levels at 1 until the engine's unlock animation ends; we have none, so apply the saved state now
 		loadlevelcompletion()
 		mapcursor_load()
 		mapcursor_levelstart()
+	end
+end
+
+-- Cleared level icons on this map, not counting the way back to the parent map.
+local function mapclears()
+	local parent, n = leveltree[#leveltree - 1], 0
+	for _, u in ipairs(units) do
+		if u.className == "level" and u.values[COMPLETED] == 3 and u.strings[U_LEVELFILE] ~= parent then n = n + 1 end
+	end
+	return n
+end
+
+-- Map progress the original engine handles outside the Lua (reconstructed from the data, see NOTES.md):
+-- a map is cleared once unlockcount of its levels are, and a revealed gate path opens when its count
+-- (1 level clears, 2 map clears, 3 orbs, 4 clears on this map) reaches its requirement.
+function engine.mapprogress(g)
+	local world, here = generaldata.strings[WORLD], generaldata.strings[CURRLEVEL]
+	local need = tonumber(g.unlockcount) or 0
+	if need > 0 and savenum(world, here) < 3 and mapclears() >= need then
+		MF_store("save", world, here, 3)
+		MF_store("save", world .. "_clears", "total", savenum(world .. "_clears", "total") + 1)
+	end
+	local counts = { savenum(world .. "_prize", "total"), savenum(world .. "_clears", "total"),
+		savenum(world .. "_bonus", "total"), mapclears() }
+	for _, id in ipairs(paths) do
+		local p = engine.objects[id]
+		local gate = p.values[PATH_GATE]
+		if gate > 0 and p.values[COMPLETED] == 1 and (counts[gate] or 0) >= p.values[PATH_REQUIREMENT] then
+			MF_savepath(id, 3)
+			unlocklevels(p.values[XPOS], p.values[YPOS], nil, true)
+			hiddendata(p.values[XPOS], p.values[YPOS], true)
+		end
 	end
 end
 
@@ -354,8 +389,13 @@ end
 
 -- block() calls this when a YOU unit is on a WIN unit.
 -- shortcut: no win animation/sound; we save, then go up to the map at the end of the turn
+-- shortcut: bonus/orbs (MF_bonus, the "<world>_bonus" total) are not counted, so orb gates stay shut
 function MF_win()
-	MF_store("save", generaldata.strings[WORLD], generaldata.strings[CURRLEVEL], 3)
+	local world, level = generaldata.strings[WORLD], generaldata.strings[CURRLEVEL]
+	if savenum(world, level) < 3 then
+		MF_store("save", world .. "_prize", "total", savenum(world .. "_prize", "total") + 1)
+	end
+	MF_store("save", world, level, 3)
 	engine.won = true
 end
 
@@ -430,6 +470,9 @@ function engine.drawlist()
 	end
 	for _, p in pairs(open) do
 		local t = tileslist[p.strings[PATH_OBJECT]]
+		if p.className == "path" and p.values[PATH_GATE] > 0 and p.values[COMPLETED] < 2 then
+			t = tileslist[p.strings[PATH_GATEOBJECT]] or t -- still-locked gate
+		end
 		if p.className == "path" and t then
 			local x, y, frame = p.values[XPOS], p.values[YPOS], 0
 			if t.tiling == 1 then
