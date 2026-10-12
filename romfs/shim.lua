@@ -246,12 +246,23 @@ function engine.loadlevel(level)
 	generaldata2.values[ZOOM] = 1
 	spritedata.values[TILEMULT] = 1
 	generaldata.values[DISABLEPARTICLES] = 1
-	changes = changes or {} -- shortcut: .ld object overrides not loaded yet; they belong here
-	clearunits()
+	clearunits() -- also resets the previous level's object changes (restoredefaults)
 	for id in pairs(engine.objects) do
 		if id >= SYSTEM_IDS then engine.objects[id] = nil end
 	end
 	engine.edge = {}
+
+	-- per-level object overrides from .ld [tiles] changed=objectNNN,...; addunit then applies them via dochanges
+	local tiles = engine.ini.level and engine.ini.level.tiles or {}
+	for i = 1, math.max(tonumber(tiles.changed_count) or 1, 1) do
+		for obj in string.gmatch(tiles[i == 1 and "changed" or ("changed" .. i)] or "", "object%d%d%d") do
+			if tileslist[obj] then
+				local id = MF_create(obj)
+				addchange(id)
+				MF_cleanremove(id)
+			end
+		end
+	end
 
 	local byid = {}
 	for class, t in pairs(tileslist) do
@@ -439,7 +450,10 @@ function engine.drawlist()
 			if tiling == 1 then frame = u.direction
 			elseif tiling == 0 or tiling == 2 or tiling == 3 then frame = u.values[DIR] * 8 end
 			local c = u.colour or t.colour or { 0, 3 }
-			add(t.sprite or u.className, t.sprite_in_root ~= false, frame,
+			local ch = changes[u.className] or {}
+			local root = t.sprite_in_root ~= false
+			if ch.root ~= nil then root = ch.root end
+			add(ch.image or t.sprite or u.className, root, frame,
 				u.values[XPOS], u.values[YPOS], c[1], c[2], u.values[ZLAYER])
 		end
 	end

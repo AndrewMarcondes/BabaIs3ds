@@ -3,11 +3,18 @@
 #include "../source/script.h"
 
 int main(int argc, char **argv) {
-    if (argc < 3) { fprintf(stderr, "usage: %s <Data dir> <out.ppm> [save.ini] [keys...]\n", argv[0]); return 2; }
+    if (argc < 3) { fprintf(stderr, "usage: %s <Data dir> <out.ppm> [save.ini] [keys or =level...]\n", argv[0]); return 2; }
     lua_State *L = script_open(argv[1], "romfs/shim.lua", argc > 3 ? argv[3] : "build-host/render_save.ini");
     if (!L || script_start(L)) return 1;
-    for (int i = 4; i < argc; i++)
-        if (script_input(L, argv[i])) return 1;
+    for (int i = 4; i < argc; i++) {
+        if (argv[i][0] == '=') { // "=100level": jump straight to a level
+            lua_getglobal(L, "engine");
+            lua_getfield(L, -1, "gotolevel");
+            lua_remove(L, -2);
+            lua_pushstring(L, argv[i] + 1);
+            if (script_call(L, 1, 0)) return 1;
+        } else if (script_input(L, argv[i])) return 1;
+    }
     static uint8_t fb[400 * 240 * 3];
     script_draw(L, fb, 400, 240);
     printf("%s\n", script_string(L, "message"));

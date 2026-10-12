@@ -43,7 +43,8 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 
 ## Next
 - Gates (MF_findgates), level numbers >= 10, unlock animation.
-- Walk animation frames, .ld object overrides (`changes`), sound, music.
+- Walk animation frames, sound, music.
+- Object overrides: per changed object MF_create + addchange + MF_cleanremove before units; addunit applies (dochanges). Sprite = changes[class].image/root.
 
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels
 - `ACHTUNG!`, u16 version (261), `MAP ` chunk (u32 size + data), `LAYR` chunk: u32 size, u16 layer count.
