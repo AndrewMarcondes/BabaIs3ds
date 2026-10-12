@@ -9,6 +9,16 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   plus `mmf.newObject(id)` (269 calls) returning objects with `.values`, `.strings`, `.flags` tables (e.g. `generaldata.values[...]`).
 - Names used in scripts but not found as strings in binary: MF_alert, MF_bonus, MF_debug, MF_getprofileID, MF_intro, MF_keyid, MF_store. Find where they come from before stubbing.
 
+## How the engine drives the scripts
+- Engine calls Lua globals by name (175 function names defined in the scripts also appear as strings in the binary, list via `strings`).
+  Key ones: `init(tilemapid, roomw, roomh, tilesize, xoff, yoff, gd1..gd5, spritedata, vardata, screenw, screenh)` (load.lua),
+  `command(key, player)` for input (syntax.lua), `addunit(id)` per spawned object, `block()`, `levelblock()`, `firstlevel()`.
+- Engine loads `Data/*.lua` and `Data/Editor/*.lua` (init needs `formatobjlist` from Editor/editor_objectlist.lua).
+- Units are engine objects: `mmf.newObject(id)` -> `.values[]` `.strings[]` `.flags[]` indexed by constants.lua (XPOS, YPOS, UNITNAME, TILING...), plus `.fixed`, `.className`, `.direction`.
+- Our side: `romfs/shim.lua` implements this in Lua (objects are tables); unknown `MF_*` become logging stubs (`engine.missing`).
+- Status: all scripts load and `init()` runs with no MF_ calls (host `test/script_test.c` and on 3DS).
+- Next: find what the engine does at level start (create a unit object per .l tile, fill values/strings, call addunit), then `command()`.
+
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels
 - `ACHTUNG!`, u16 version (261), `MAP ` chunk (u32 size + data), `LAYR` chunk: u32 size, u16 layer count.
 - Per layer: u32 w, u32 h, header (offsets/zoom floats, not decoded), then

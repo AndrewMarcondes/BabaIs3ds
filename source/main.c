@@ -1,6 +1,8 @@
 #include <3ds.h>
 #include <stdio.h>
 #include "render.h"
+#include "script.h"
+#include "../lua/lauxlib.h"
 
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 
@@ -25,6 +27,11 @@ int main(void) {
             }
         printf("ok\n");
     }
+
+    romfsInit();
+    lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua");
+    if (L && luaL_dostring(L, "init(1, 35, 20, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)") == LUA_OK) printf("lua init ok\n");
+    else if (L) printf("lua: %s\n", lua_tostring(L, -1));
     printf("START to exit\n");
 
     while (aptMainLoop()) {
@@ -34,6 +41,8 @@ int main(void) {
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
+    if (L) lua_close(L);
+    romfsExit();
     gfxExit();
     return 0;
 }

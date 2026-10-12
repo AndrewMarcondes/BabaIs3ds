@@ -17,4 +17,11 @@ Needs devkitPro with `3ds-dev 3ds-zlib`.
     cc -o build-host/render_test test/render_test.c source/render.c source/level.c source/png.c -lz
     build-host/render_test <path to Data> Worlds/baba/0level out.ppm
 
+    # Lua harness: loads the game scripts through romfs/shim.lua and runs init()
+    mkdir -p build-host/lua && (cd build-host/lua && cc -O1 -w -DLUA_USE_POSIX -c ../../lua/*.c)
+    cc -o build-host/script_test test/script_test.c source/script.c build-host/lua/*.o -lm
+    build-host/script_test <path to Data>
+
+Lua 5.3.4 is vendored in `lua/` (MIT, see lua/LICENSE).
+
 Reverse-engineering notes: NOTES.md.
