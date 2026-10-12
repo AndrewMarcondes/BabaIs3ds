@@ -42,7 +42,7 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Save: ini at sdmc:/3ds/baba/save.ini, section = world.
 
 ## Next
-- Gates (MF_findgates), level numbers >= 10, unlock animation.
+- Gates (MF_findgates + gateunlock timers; gates have COMPLETED < -1 when their requirement is met), unlock animation.
 - Sound, music.
 - Animation: walk frame = VISUALDIR (movement.lua advances it), `animate()` turns it into unit.direction (DIR*8+VISUALDIR for tiling 2/3,
   VISUALDIR for 4). Engine calls animate() after turns and on a ~200ms timer; all sprites also wobble through _1/_2/_3 files on that timer.

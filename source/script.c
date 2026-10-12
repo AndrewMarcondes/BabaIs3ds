@@ -153,16 +153,16 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
     lua_getfield(L, -1, "drawlist");
     lua_remove(L, -2);
     if (script_call(L, 0, 1)) return;
-    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer }
+    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part }
     int n = lua_rawlen(L, -1);
     for (int i = 1; i <= n; i++) {
         lua_rawgeti(L, -1, i);
-        int v[5];
-        for (int k = 0; k < 5; k++) { lua_rawgeti(L, -1, k + 3); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
+        int v[8];
+        for (int k = 0; k < 7; k++) { lua_rawgeti(L, -1, k + 3); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
         lua_rawgeti(L, -1, 2);
         int root = lua_toboolean(L, -1);
         lua_rawgeti(L, -2, 1);
-        render_sprite(fb, lua_tostring(L, -1), root, v[0], wobble, v[1], v[2], v[3], v[4]);
+        render_sprite(fb, lua_tostring(L, -1), root, v[0], wobble, v[6], v[1], v[2], v[3], v[4]);
         lua_pop(L, 3);
     }
     lua_pop(L, 1);

@@ -63,19 +63,21 @@ static uint8_t *scale(const uint8_t *src, int sw, int sh, int dw, int dh) {
 // Loads and scales an image to w*h, cached by path. Missing files are cached as NULL so each is reported once.
 // The returned pixels are only valid until the next call (a full cache is cleared).
 static const uint8_t *get_image(const char *path, int dw, int dh) {
-    unsigned i = hash(path) & (CACHE_SIZE - 1);
+    char key[600]; // the same file can be cached at several sizes
+    snprintf(key, sizeof key, "%s|%dx%d", path, dw, dh);
+    unsigned i = hash(key) & (CACHE_SIZE - 1);
     for (; R.cache[i].path; i = (i + 1) & (CACHE_SIZE - 1))
-        if (!strcmp(R.cache[i].path, path)) return R.cache[i].px;
+        if (!strcmp(R.cache[i].path, key)) return R.cache[i].px;
     if (R.ncache >= CACHE_SIZE * 3 / 4) {
         cache_clear();
-        i = hash(path) & (CACHE_SIZE - 1);
+        i = hash(key) & (CACHE_SIZE - 1);
     }
     int w, h;
     uint8_t *raw = png_load(path, &w, &h);
     if (!raw) printf("missing sprite %s\n", path);
     uint8_t *px = raw ? scale(raw, w, h, dw, dh) : NULL;
     free(raw);
-    R.cache[i].path = strdup(path);
+    R.cache[i].path = strdup(key);
     R.cache[i].px = px;
     R.ncache++;
     return px;
@@ -128,7 +130,7 @@ void render_clear(uint8_t *fb) {
     fill(fb, R.ox, R.oy, R.vw * R.ts, R.vh * R.ts, PAL(0, 4));
 }
 
-void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int x, int y, int c1, int c2) {
+void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int part, int x, int y, int c1, int c2) {
     if (x < 1 || y < 1 || x > R.vw || y > R.vh) return;
     if (sprite[0] == '#') { // "#box": solid tile with a 1px gap, for level icons the engine draws itself
         fill(fb, R.ox + (x - 1) * R.ts + 1, R.oy + (y - 1) * R.ts + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
@@ -140,13 +142,14 @@ void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wob
         snprintf(path, sizeof path, "%s/%s%s%sSprites/%s.png", R.data, dir, world, slash, sprite + 1);
     else
         snprintf(path, sizeof path, "%s/%s%s%sSprites/%s_%d_%d.png", R.data, dir, world, slash, sprite, frame, wobble);
-    const uint8_t *spr = get_image(path, R.ts, R.ts);
+    int w = part ? R.ts / 2 : R.ts;
+    const uint8_t *spr = get_image(path, w, R.ts);
     if (!spr) return;
     const uint8_t *c = PAL(c1, c2);
-    int px0 = R.ox + (x - 1) * R.ts, py0 = R.oy + (y - 1) * R.ts;
+    int px0 = R.ox + (x - 1) * R.ts + (part == 2 ? R.ts - w : 0), py0 = R.oy + (y - 1) * R.ts;
     for (int j = 0; j < R.ts; j++)
-        for (int i = 0; i < R.ts; i++) {
-            const uint8_t *s = spr + (j * R.ts + i) * 4;
+        for (int i = 0; i < w; i++) {
+            const uint8_t *s = spr + (j * w + i) * 4;
             uint8_t *d = fb + ((py0 + j) * R.fbw + px0 + i) * 3;
             for (int k = 0; k < 3; k++) d[k] = (d[k] * (255 - s[3]) + s[k] * c[k] / 255 * s[3]) / 255;
         }
