@@ -96,8 +96,11 @@ void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int x, 
         return;
     }
     char path[512];
-    if (root) snprintf(path, sizeof path, "%s/Sprites/%s_%d_1.png", R.data, sprite, frame);
-    else snprintf(path, sizeof path, "%s/Worlds/%s/Sprites/%s_%d_1.png", R.data, R.world, sprite, frame);
+    const char *dir = root ? "" : "Worlds/", *world = root ? "" : R.world, *slash = root ? "" : "/";
+    if (sprite[0] == '@') // "@name": exact file name, e.g. map icons "icon_lake_1"
+        snprintf(path, sizeof path, "%s/%s%s%sSprites/%s.png", R.data, dir, world, slash, sprite + 1);
+    else
+        snprintf(path, sizeof path, "%s/%s%s%sSprites/%s_%d_1.png", R.data, dir, world, slash, sprite, frame);
     const uint8_t *spr = get_image(path, R.ts, R.ts);
     if (!spr) return;
     const uint8_t *c = PAL(c1, c2);

@@ -420,8 +420,12 @@ function engine.drawlist()
 				local c = u.colour or { 1, 2 }
 				local x, y, n = u.values[XPOS], u.values[YPOS], u.values[VISUALLEVEL]
 				add("#box", true, 0, x, y, c[1], c[2], u.values[ZLAYER])
-				-- style 0 = number, 1 = letter, 2 = dot; shortcut: icons (-1) and numbers >= 10 show as a plain box
-				if u.values[VISUALSTYLE] == 0 and n < 10 then
+				-- style 0 = number, 1 = letter, 2 = dot, -1 = [icons] entry <number>; shortcut: numbers >= 10 show as a plain box
+				local icons = engine.ini.level.icons or {}
+				if u.values[VISUALSTYLE] == -1 and icons[n .. "file"] then
+					list[#list] = nil -- icons replace the box
+					add("@" .. icons[n .. "file"], icons[n .. "root"] == "1", 0, x, y, c[1], c[2], u.values[ZLAYER])
+				elseif u.values[VISUALSTYLE] == 0 and n < 10 then
 					add("text_" .. n, true, 0, x, y, 0, 4, u.values[ZLAYER])
 				elseif u.values[VISUALSTYLE] == 1 and n < 26 then
 					add("text_" .. string.char(97 + n), true, 0, x, y, 0, 4, u.values[ZLAYER])

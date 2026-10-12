@@ -42,7 +42,7 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Save: ini at sdmc:/3ds/baba/save.ini, section = world.
 
 ## Next
-- Gates (MF_findgates), level icons for style -1 ([icons] section), numbers >= 10, unlock animation.
+- Gates (MF_findgates), level numbers >= 10, unlock animation.
 - Walk animation frames, .ld object overrides (`changes`), sound, music.
 
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels
