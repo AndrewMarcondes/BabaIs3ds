@@ -1,42 +1,50 @@
 #include <3ds.h>
 #include <stdio.h>
-#include "render.h"
 #include "script.h"
-#include "../lua/lauxlib.h"
 
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 
 static uint8_t frame[400 * 240 * 3];
 
+// Top framebuffer is 240x400 column-major, bottom-to-top, BGR8.
+static void present(void) {
+    u8 *fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
+    for (int y = 0; y < 240; y++)
+        for (int x = 0; x < 400; x++) {
+            const u8 *s = frame + (y * 400 + x) * 3;
+            u8 *d = fb + (x * 240 + (239 - y)) * 3;
+            d[0] = s[2]; d[1] = s[1]; d[2] = s[0];
+        }
+}
+
 int main(void) {
     gfxInitDefault();
     gfxSetDoubleBuffering(GFX_TOP, false);
     consoleInit(GFX_BOTTOM, NULL);
-    printf("baba3ds\nloading level from " DATA_DIR "\n");
-
-    int r = render_level(DATA_DIR, "Worlds/baba/0level", frame, 400, 240);
-    if (r) printf("render_level failed: %d\nCopy the game's Data folder to sdmc:/3ds/baba/Data\n", r);
-    else {
-        // Top framebuffer is 240x400 column-major, bottom-to-top, BGR8.
-        u8 *fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
-        for (int y = 0; y < 240; y++)
-            for (int x = 0; x < 400; x++) {
-                const u8 *s = frame + (y * 400 + x) * 3;
-                u8 *d = fb + (x * 240 + (239 - y)) * 3;
-                d[0] = s[2]; d[1] = s[1]; d[2] = s[0];
-            }
-        printf("ok\n");
-    }
-
     romfsInit();
-    lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua");
-    if (L && luaL_dostring(L, "init(1, 35, 20, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)") == LUA_OK) printf("lua init ok\n");
-    else if (L) printf("lua: %s\n", lua_tostring(L, -1));
-    printf("START to exit\n");
+    printf("baba3ds\nD-pad/Circle move  B undo  A wait\nX restart  START quit\n\n");
 
+    lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua");
+    int ok = L && !script_startlevel(L, DATA_DIR, "baba", "0level", 400, 240);
+    if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\n");
+    else { script_draw(L, frame); present(); }
+
+    hidSetRepeatParameters(15, 6);
     while (aptMainLoop()) {
         hidScanInput();
-        if (hidKeysDown() & KEY_START) break;
+        u32 down = hidKeysDown(), rep = hidKeysDownRepeat();
+        if (down & KEY_START) break;
+        if (ok) {
+            // KEY_RIGHT etc. = D-pad or Circle Pad (Azahar maps the keyboard arrows to the Circle Pad)
+            const char *key = rep & KEY_RIGHT ? "right" : rep & KEY_UP ? "up" : rep & KEY_LEFT ? "left"
+                            : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : rep & KEY_A ? "idle"
+                            : down & KEY_X ? "restart" : NULL;
+            if (key) {
+                script_input(L, key);
+                script_draw(L, frame);
+                present();
+            }
+        }
         gfxFlushBuffers();
         gfxSwapBuffers();
         gspWaitForVBlank();

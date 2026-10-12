@@ -87,3 +87,18 @@ void level_free(Level *lv) {
     }
     memset(lv, 0, sizeof *lv);
 }
+
+int level_palette(const char *ld_path, char *out, int outlen) {
+    snprintf(out, outlen, "default.png");
+    FILE *f = fopen(ld_path, "r");
+    if (!f) return -1;
+    char line[256];
+    while (fgets(line, sizeof line, f))
+        if (!strncmp(line, "palette=", 8)) {
+            line[strcspn(line, "\r\n")] = 0;
+            if (line[8]) snprintf(out, outlen, "%s", line + 8);
+            break;
+        }
+    fclose(f);
+    return 0;
+}

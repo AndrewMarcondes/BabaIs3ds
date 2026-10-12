@@ -16,8 +16,15 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Engine loads `Data/*.lua` and `Data/Editor/*.lua` (init needs `formatobjlist` from Editor/editor_objectlist.lua).
 - Units are engine objects: `mmf.newObject(id)` -> `.values[]` `.strings[]` `.flags[]` indexed by constants.lua (XPOS, YPOS, UNITNAME, TILING...), plus `.fixed`, `.className`, `.direction`.
 - Our side: `romfs/shim.lua` implements this in Lua (objects are tables); unknown `MF_*` become logging stubs (`engine.missing`).
-- Status: all scripts load and `init()` runs with no MF_ calls (host `test/script_test.c` and on 3DS).
-- Next: find what the engine does at level start (create a unit object per .l tile, fill values/strings, call addunit), then `command()`.
+- Level start (shim `engine.loadlevel`, modelled on `restore()` in debug.lua): `init(...)`, `clearunits()`, one object per .l tile
+  with `className` = tileslist key (`objectNNN`) + XPOS/YPOS/DIR/ID=-1, `addunit(id)`; then `dynamictiling()`, `updatecolours()`, `startblock()`.
+  `getmetadata` fills name/type/tiling/layer from tileslist, so the engine only sets className.
+- Tile id 0 in .l = level edge; it is not a unit but `map[0]:get_x(x,y)` (255 = empty, else obstacle).
+- Per turn (shim `engine.input`): `command(key)`, `block()`, `newundo()`. Undo: `undo()` then `code()`. `command('undo')` does nothing.
+- Unit drawing: tiling 1 frame = `unit.direction` (set by dynamictiling), tiling 0/2/3 = DIR*8. Colour set by game via `MF_setcolour`.
+- Particles: off via `generaldata.values[DISABLEPARTICLES] = 1`.
+- Status: level 1 plays on host test (move, push, undo, restart asserted) and runs on Azahar.
+- Next: win (MF_win), walk animation frames, level switching/map, .ld object overrides, sound.
 
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels
 - `ACHTUNG!`, u16 version (261), `MAP ` chunk (u32 size + data), `LAYR` chunk: u32 size, u16 layer count.

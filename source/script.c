@@ -1,4 +1,5 @@
 #include "script.h"
+#include "render.h"
 #include "../lua/lauxlib.h"
 #include "../lua/lualib.h"
 #include <dirent.h>
@@ -51,4 +52,88 @@ lua_State *script_open(const char *data, const char *shim_path) {
     snprintf(editor, sizeof editor, "%s/Editor", data);
     if (run(L, shim_path) || run_dir(L, data, first, 2) || run_dir(L, editor, NULL, 0)) { lua_close(L); return NULL; }
     return L;
+}
+
+// pcall with a traceback in the error message; on failure prints it and leaves nothing on the stack.
+int script_call(lua_State *L, int nargs, int nresults) {
+    int base = lua_gettop(L) - nargs;
+    lua_getglobal(L, "debug");
+    lua_getfield(L, -1, "traceback");
+    lua_remove(L, -2);
+    lua_insert(L, base);
+    int r = lua_pcall(L, nargs, nresults, base);
+    lua_remove(L, base);
+    if (r) { printf("lua: %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+    return r;
+}
+
+int script_loadlevel(lua_State *L, const Level *lv) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "loadlevel");
+    lua_newtable(L);
+    lua_pushinteger(L, lv->layers[0].w);
+    lua_setfield(L, -2, "w");
+    lua_pushinteger(L, lv->layers[0].h);
+    lua_setfield(L, -2, "h");
+    lua_newtable(L);
+    for (int l = 0; l < lv->nlayers; l++) {
+        const Layer *ly = &lv->layers[l];
+        lua_newtable(L);
+        lua_createtable(L, ly->w * ly->h, 0);
+        for (uint32_t i = 0; i < ly->w * ly->h; i++) { lua_pushinteger(L, ly->tiles[i]); lua_rawseti(L, -2, i + 1); }
+        lua_setfield(L, -2, "tiles");
+        if (ly->dirs) {
+            lua_createtable(L, ly->w * ly->h, 0);
+            for (uint32_t i = 0; i < ly->w * ly->h; i++) { lua_pushinteger(L, ly->dirs[i]); lua_rawseti(L, -2, i + 1); }
+            lua_setfield(L, -2, "dirs");
+        }
+        lua_rawseti(L, -2, l + 1);
+    }
+    lua_setfield(L, -2, "layers");
+    int r = script_call(L, 1, 0);
+    lua_pop(L, 1);
+    return r;
+}
+
+void script_draw(lua_State *L, uint8_t *fb) {
+    render_clear(fb);
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "drawlist");
+    lua_remove(L, -2);
+    if (script_call(L, 0, 1)) return;
+    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer }
+    int n = lua_rawlen(L, -1);
+    for (int i = 1; i <= n; i++) {
+        lua_rawgeti(L, -1, i);
+        int v[5];
+        for (int k = 0; k < 5; k++) { lua_rawgeti(L, -1, k + 3); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
+        lua_rawgeti(L, -1, 2);
+        int root = lua_toboolean(L, -1);
+        lua_rawgeti(L, -2, 1);
+        render_sprite(fb, lua_tostring(L, -1), root, v[0], v[1], v[2], v[3], v[4]);
+        lua_pop(L, 3);
+    }
+    lua_pop(L, 1);
+}
+
+int script_startlevel(lua_State *L, const char *data, const char *world, const char *level, int fbw, int fbh) {
+    char path[512], palette[64];
+    Level lv;
+    snprintf(path, sizeof path, "%s/Worlds/%s/%s.l", data, world, level);
+    if (level_load(path, &lv)) { printf("cannot load %s\n", path); return -1; }
+    snprintf(path, sizeof path, "%s/Worlds/%s/%s.ld", data, world, level);
+    level_palette(path, palette, sizeof palette);
+    int r = render_begin_level(data, world, palette, lv.layers[0].w, lv.layers[0].h, fbw, fbh);
+    if (r) printf("cannot load palette %s\n", palette);
+    else r = script_loadlevel(L, &lv);
+    level_free(&lv);
+    return r;
+}
+
+int script_input(lua_State *L, const char *key) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "input");
+    lua_remove(L, -2);
+    lua_pushstring(L, key);
+    return script_call(L, 1, 0);
 }
