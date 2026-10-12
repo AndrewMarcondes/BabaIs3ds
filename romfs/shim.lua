@@ -65,6 +65,7 @@ end
 -- level: { w, h, layers = { { tiles = {...}, dirs = {...} }, ... } }, tiles 0-based row-major, ids = tile[1] + tile[2]*256
 function engine.loadlevel(level)
 	engine.current = level
+	engine.won = false
 	init(1, level.w, level.h, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
 	generaldata2.values[ZOOM] = 1
 	spritedata.values[TILEMULT] = 1
@@ -102,8 +103,15 @@ function MF_restart(instant)
 	engine.loadlevel(engine.current)
 end
 
+-- block() calls this when a YOU unit is on a WIN unit.
+-- shortcut: no win animation/sound or save/map progress yet; the level just stops taking moves
+function MF_win()
+	engine.won = true
+end
+
 -- One player input per turn: key is a name from the game's `keys` table (right/up/left/down/idle/undo/restart).
 function engine.input(key)
+	if engine.won and key ~= "restart" then return end
 	if key == "undo" then
 		undo()
 		updatecode = 1

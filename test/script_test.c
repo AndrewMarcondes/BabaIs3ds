@@ -27,6 +27,14 @@ int main(int argc, char **argv) {
         "engine.input('restart'); b = baba()\n"
         "assert(b.values[XPOS] == x0, 'restart did not reset baba')\n"
         "print('restart ok')\n"
+        "local flag; for _, u in ipairs(units) do if u.strings[UNITNAME] == 'flag' then flag = u end end\n"
+        "assert(flag.values[YPOS] == b.values[YPOS], 'flag not in baba row')\n"
+        "for i = 1, 30 do if engine.won then break end engine.input('right') end\n"
+        "assert(engine.won and b.values[XPOS] == flag.values[XPOS], 'touching flag did not win')\n"
+        "local wx = b.values[XPOS]; engine.input('left'); engine.input('undo')\n"
+        "assert(b.values[XPOS] == wx, 'input not locked after win')\n"
+        "engine.input('restart'); assert(not engine.won, 'restart did not clear win')\n"
+        "print('win ok at', wx)\n"
         "for k, n in pairs(engine.missing) do io.write(k, '=', n, ' ') end print()\n");
     if (r) { printf("lua: %s\n", lua_tostring(L, -1)); return 1; }
     printf("PASS\n");

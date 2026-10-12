@@ -4,6 +4,8 @@
 
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 
+#define HELP "baba3ds\nD-pad/Circle move  B undo  A wait\nX restart  START quit\n\n"
+
 static uint8_t frame[400 * 240 * 3];
 
 // Top framebuffer is 240x400 column-major, bottom-to-top, BGR8.
@@ -22,7 +24,7 @@ int main(void) {
     gfxSetDoubleBuffering(GFX_TOP, false);
     consoleInit(GFX_BOTTOM, NULL);
     romfsInit();
-    printf("baba3ds\nD-pad/Circle move  B undo  A wait\nX restart  START quit\n\n");
+    printf(HELP);
 
     lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua");
     int ok = L && !script_startlevel(L, DATA_DIR, "baba", "0level", 400, 240);
@@ -40,9 +42,12 @@ int main(void) {
                             : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : rep & KEY_A ? "idle"
                             : down & KEY_X ? "restart" : NULL;
             if (key) {
+                int was_won = script_won(L);
                 script_input(L, key);
                 script_draw(L, frame);
                 present();
+                if (!was_won && script_won(L)) printf("Congratulations!\nX to play again\n");
+                else if (was_won && !script_won(L)) printf("\x1b[2J\x1b[H" HELP);
             }
         }
         gfxFlushBuffers();

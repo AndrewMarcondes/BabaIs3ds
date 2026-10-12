@@ -19,3 +19,6 @@ int script_startlevel(lua_State *L, const char *data, const char *world, const c
 
 // One turn of input; key is from the game's keys table: right/up/left/down/idle/undo/restart.
 int script_input(lua_State *L, const char *key);
+
+// 1 once the level has been won (input is ignored until restart).
+int script_won(lua_State *L);

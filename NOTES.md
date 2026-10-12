@@ -24,7 +24,8 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Unit drawing: tiling 1 frame = `unit.direction` (set by dynamictiling), tiling 0/2/3 = DIR*8. Colour set by game via `MF_setcolour`.
 - Particles: off via `generaldata.values[DISABLEPARTICLES] = 1`.
 - Status: level 1 plays on host test (move, push, undo, restart asserted) and runs on Azahar.
-- Next: win (MF_win), walk animation frames, level switching/map, .ld object overrides, sound.
+- Win: game's block() calls MF_win(); shim sets engine.won and ignores input except restart.
+- Next: walk animation frames, level switching/map, .ld object overrides, sound.
 
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels
 - `ACHTUNG!`, u16 version (261), `MAP ` chunk (u32 size + data), `LAYR` chunk: u32 size, u16 layer count.

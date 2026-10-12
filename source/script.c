@@ -137,3 +137,11 @@ int script_input(lua_State *L, const char *key) {
     lua_pushstring(L, key);
     return script_call(L, 1, 0);
 }
+
+int script_won(lua_State *L) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "won");
+    int won = lua_toboolean(L, -1);
+    lua_pop(L, 2);
+    return won;
+}
