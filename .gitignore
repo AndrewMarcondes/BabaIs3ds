@@ -6,3 +6,4 @@ build/
 *.smdh
 *.elf
 hosttest
+build-host/
