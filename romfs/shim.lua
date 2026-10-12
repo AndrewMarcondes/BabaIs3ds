@@ -340,9 +340,22 @@ function engine.mapprogress(g)
 	end
 end
 
+local function levelbase(name) return engine.data .. "/Worlds/" .. generaldata.strings[WORLD] .. "/" .. name end
+
+-- Checked before the level tree changes, so a missing file can't leave CURRLEVEL pointing at it.
+local function levelexists(name)
+	local f = name and name ~= "" and io.open(levelbase(name) .. ".l", "rb")
+	if not f then
+		engine.message = "cannot load " .. tostring(name)
+		return false
+	end
+	f:close()
+	return true
+end
+
 -- Loads Worlds/<world>/<name>.l/.ld and makes it the current level.
 function engine.gotolevel(name)
-	local base = engine.data .. "/Worlds/" .. generaldata.strings[WORLD] .. "/" .. name
+	local base = levelbase(name)
 	local level = engine_readlevel(base .. ".l")
 	if not level then
 		engine.message = "cannot load " .. name
@@ -356,7 +369,10 @@ function engine.gotolevel(name)
 	local im = engine.ini.level.images or {}
 	engine.images = {}
 	for i = 0, (tonumber(im.total) or 0) - 1 do engine.images[#engine.images + 1] = im[tostring(i)] end
-	engine.levelserial = engine.levelserial + 1
+	if name ~= engine.shown then -- tells the renderer to reload; a restart keeps its sprite cache
+		engine.shown = name
+		engine.levelserial = engine.levelserial + 1
+	end
 	generaldata.strings[CURRLEVEL] = name
 	engine.loadlevel(level)
 	engine.message = g.name or name
@@ -400,7 +416,7 @@ function MF_win()
 end
 
 local function goup()
-	if #leveltree <= 1 then return false end
+	if #leveltree <= 1 or not levelexists(leveltree[#leveltree - 1]) then return false end
 	uplevel()
 	return engine.gotolevel(generaldata.strings[CURRLEVEL])
 end
@@ -435,7 +451,7 @@ function engine.input(key)
 	if engine.entering then
 		local l = engine.objects[engine.entering]
 		engine.entering = nil
-		if l then
+		if l and levelexists(l.strings[U_LEVELFILE]) then
 			sublevel(l.strings[U_LEVELFILE], l.values[VISUALLEVEL], l.values[VISUALSTYLE])
 			engine.gotolevel(l.strings[U_LEVELFILE])
 		end

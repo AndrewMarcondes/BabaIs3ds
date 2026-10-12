@@ -51,10 +51,11 @@ int level_load(const char *path, Level *out) {
         long m = find(b, len, pos, "MAIN");
         if (m < 0 || m + 8 > len) goto done;
         uint32_t size = rd32(b + m + 4);
-        if (m + 8 + size > (uint32_t)len) goto done;
+        if (size > (uint32_t)(len - m - 8)) goto done; // subtract, not add: 32-bit long on 3DS can wrap
         uint8_t *raw = inflate_to(b + m + 8, size, cells * 2);
         if (!raw) goto done;
         L->tiles = malloc(cells * 2);
+        if (!L->tiles) { free(raw); goto done; }
         for (uint32_t c = 0; c < cells; c++) L->tiles[c] = raw[c * 2] | raw[c * 2 + 1] << 8;
         free(raw);
         out->nlayers = l + 1;
@@ -66,7 +67,7 @@ int level_load(const char *path, Level *out) {
         for (int e = 0; e < count; e++) {
             if (pos + 8 > len) goto done;
             uint32_t id = rd32(b + pos), dsize = rd32(b + pos + 4);
-            if (pos + 8 + dsize > (uint32_t)len) goto done;
+            if (dsize > (uint32_t)(len - pos - 8)) goto done;
             uint8_t *d = inflate_to(b + pos + 8, dsize, cells);
             if (!d) goto done;
             if (id == 0 && !L->dirs) L->dirs = d; else free(d);

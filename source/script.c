@@ -111,7 +111,15 @@ static int engine_call(lua_State *L, const char *fn, const char *arg) {
     return script_call(L, arg ? 1 : 0, 0);
 }
 
-int script_start(lua_State *L) { return engine_call(L, "boot", NULL); }
+int script_start(lua_State *L) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "boot");
+    lua_remove(L, -2);
+    if (script_call(L, 0, 1)) return -1;
+    int ok = lua_toboolean(L, -1); // boot returns false if the first level can't be loaded
+    lua_pop(L, 1);
+    return ok ? 0 : -1;
+}
 
 const char *script_string(lua_State *L, const char *field) {
     lua_getglobal(L, "engine");
@@ -134,8 +142,13 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
         lua_getfield(L, -2, "roomh");
         int w = lua_tointeger(L, -2), h = lua_tointeger(L, -1);
         lua_pop(L, 3);
-        if (render_begin_level(script_string(L, "data"), script_string(L, "world"), script_string(L, "palette"), w, h, fbw, fbh))
-            printf("cannot load palette %s\n", script_string(L, "palette"));
+        if (render_begin_level(script_string(L, "data"), script_string(L, "world"), script_string(L, "palette"), w, h, fbw, fbh)) {
+            printf("cannot load palette %s, using default\n", script_string(L, "palette"));
+            if (render_begin_level(script_string(L, "data"), script_string(L, "world"), "default.png", w, h, fbw, fbh)) {
+                serial = -1; // try again next draw; nothing can be drawn without a palette
+                return;
+            }
+        }
     }
     if (!render_backdrop_cached(fb)) {
         render_clear(fb);
