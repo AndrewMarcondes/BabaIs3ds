@@ -54,8 +54,10 @@ function engine.readini(path)
 	return t
 end
 
+-- Written to path.tmp then renamed, so a power-off mid-write can't leave a half-written save.
 local function writeini(path, t)
-	local f = io.open(path, "w")
+	local tmp = path .. ".tmp"
+	local f = io.open(tmp, "w")
 	if not f then return end
 	local secs = {}
 	for s in pairs(t) do secs[#secs + 1] = s end
@@ -67,7 +69,9 @@ local function writeini(path, t)
 		table.sort(keys)
 		for _, k in ipairs(keys) do f:write(k, "=", t[s][k], "\n") end
 	end
-	f:close()
+	if not f:close() then return end
+	os.remove(path) -- FAT (SD card) rename won't replace an existing file
+	os.rename(tmp, path)
 end
 
 -- storage: level (current .ld), world (world_data.txt), save, settings, lang
@@ -332,6 +336,10 @@ function engine.boot()
 	generaldata.strings[BASEWORLD] = "baba"
 	generaldata.strings[CURRLEVEL] = ""
 	engine.ini.world = engine.readini(engine.data .. "/Worlds/baba/world_data.txt")
+	if engine.savefile then
+		local f = io.open(engine.savefile, "r")
+		if f then f:close() else os.rename(engine.savefile .. ".tmp", engine.savefile) end -- finish an interrupted save
+	end
 	engine.ini.save = engine.savefile and engine.readini(engine.savefile) or {}
 	firstlevel()
 	-- shortcut: the real engine restores the level tree from the save; we only know the start map

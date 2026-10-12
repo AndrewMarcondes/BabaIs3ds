@@ -137,15 +137,18 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
         if (render_begin_level(script_string(L, "data"), script_string(L, "world"), script_string(L, "palette"), w, h, fbw, fbh))
             printf("cannot load palette %s\n", script_string(L, "palette"));
     }
-    render_clear(fb);
-    lua_getglobal(L, "engine");
-    lua_getfield(L, -1, "images");
-    for (int i = 1; lua_istable(L, -1) && i <= (int)lua_rawlen(L, -1); i++) {
-        lua_rawgeti(L, -1, i);
-        render_image(fb, lua_tostring(L, -1));
-        lua_pop(L, 1);
+    if (!render_backdrop_cached(fb)) {
+        render_clear(fb);
+        lua_getglobal(L, "engine");
+        lua_getfield(L, -1, "images");
+        for (int i = 1; lua_istable(L, -1) && i <= (int)lua_rawlen(L, -1); i++) {
+            lua_rawgeti(L, -1, i);
+            render_image(fb, lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+        lua_pop(L, 2);
+        render_backdrop_save(fb);
     }
-    lua_pop(L, 2);
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "drawlist");
     lua_remove(L, -2);

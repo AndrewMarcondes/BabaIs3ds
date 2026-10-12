@@ -12,3 +12,7 @@ void render_clear(uint8_t *fb);
 void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int x, int y, int c1, int c2);
 // Full-colour background image Worlds/<world>/Images/<name>_1.png stretched over the play area.
 void render_image(uint8_t *fb, const char *name);
+// The level backdrop (clear + images) never changes within a level: compose it once, then copy it.
+// render_backdrop_cached copies it into fb and returns 1 if it was saved; render_backdrop_save stores fb as it.
+int render_backdrop_cached(uint8_t *fb);
+void render_backdrop_save(const uint8_t *fb);

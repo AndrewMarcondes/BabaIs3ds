@@ -17,6 +17,7 @@ static struct {
     int pw, ph, fbw, fbh, ts, ox, oy, vw, vh;
     Sprite cache[CACHE_SIZE];
     int ncache;
+    uint8_t *backdrop; // background colours + images, composed once per level
 } R;
 
 static unsigned hash(const char *s) {
@@ -88,7 +89,20 @@ static void fill(uint8_t *fb, int x, int y, int w, int h, const uint8_t *c) {
 void render_end_level(void) {
     cache_clear();
     free(R.pal);
+    free(R.backdrop);
     R.pal = NULL;
+    R.backdrop = NULL;
+}
+
+int render_backdrop_cached(uint8_t *fb) {
+    if (!R.backdrop) return 0;
+    memcpy(fb, R.backdrop, R.fbw * R.fbh * 3);
+    return 1;
+}
+
+void render_backdrop_save(const uint8_t *fb) {
+    if (!R.backdrop) R.backdrop = malloc(R.fbw * R.fbh * 3);
+    if (R.backdrop) memcpy(R.backdrop, fb, R.fbw * R.fbh * 3);
 }
 
 int render_begin_level(const char *data, const char *world, const char *palette, int roomw, int roomh, int fbw, int fbh) {

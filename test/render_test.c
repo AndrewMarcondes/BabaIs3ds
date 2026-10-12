@@ -1,5 +1,6 @@
 // Host check: boots the game with the given save, plays keys, renders the 3DS top screen to a PPM.
 #include <stdio.h>
+#include <string.h>
 #include "../source/script.h"
 
 int main(int argc, char **argv) {
@@ -15,8 +16,11 @@ int main(int argc, char **argv) {
             if (script_call(L, 1, 0)) return 1;
         } else if (script_input(L, argv[i])) return 1;
     }
-    static uint8_t fb[400 * 240 * 3];
+    static uint8_t fb[400 * 240 * 3], first[400 * 240 * 3];
     script_draw(L, fb, 400, 240, 1);
+    memcpy(first, fb, sizeof fb);
+    script_draw(L, fb, 400, 240, 1); // second draw goes through the cached backdrop
+    if (memcmp(first, fb, sizeof fb)) { fprintf(stderr, "redraw differs from first draw\n"); return 1; }
     printf("%s\n", script_string(L, "message"));
     FILE *f = fopen(argv[2], "wb");
     fprintf(f, "P6 400 240 255\n");
