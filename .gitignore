@@ -7,3 +7,5 @@ build/
 *.elf
 hosttest
 build-host/
+# Azahar ships this (GPL); copy it from the Azahar download's scripting/ folder
+tools/AzaharRPC.py
