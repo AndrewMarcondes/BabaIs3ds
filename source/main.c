@@ -37,10 +37,20 @@ int main(void) {
     romfsInit();
     printf(HELP);
 
+    u64 t0 = osGetTime();
     lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua", SAVE_FILE);
     int ok = L && !script_start(L);
+    u64 t1 = osGetTime();
     if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\n");
-    else { script_draw(L, frame, 400, 240); present(); show_message(L); }
+    else {
+        script_draw(L, frame, 400, 240);
+        u64 t2 = osGetTime();
+        script_draw(L, frame, 400, 240); // second draw: sprites cached, the per-turn cost
+        u64 t3 = osGetTime();
+        present();
+        show_message(L);
+        printf("boot %llums, first draw %llums, draw %llums\n", t1 - t0, t2 - t1, t3 - t2);
+    }
 
     hidSetRepeatParameters(15, 6);
     while (aptMainLoop()) {
