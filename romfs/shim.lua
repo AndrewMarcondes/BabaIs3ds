@@ -1,6 +1,10 @@
 -- Engine side of the Lua boundary (what Chowdren/Fusion provided). Game objects are plain tables.
+-- MF_* behaviour follows Data/MF_documentation.txt from the game.
 
-engine = { objects = {}, missing = {}, nextid = 100 }
+engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {} }
+
+local SYSTEM_IDS = 100 -- ids below this are engine/system objects (generaldata etc.) and survive level changes
+local VARS_ID = 9      -- scratch object handed to mapcursor_enter
 
 -- Fusion alterables default to 0 / "" / false.
 local function defaults(v)
@@ -29,6 +33,65 @@ function TileMap.new(id)
 	return { [0] = { get_x = function(self, x, y) return engine.edge[x + y * roomsizex] or 255 end } }
 end
 
+---------------------------------------------------------------- storage (MF_read / MF_store)
+
+function engine.readini(path)
+	local t, sec = {}, nil
+	local f = io.open(path, "r")
+	if not f then return t end
+	for line in f:lines() do
+		line = line:gsub("\r$", "")
+		local s = line:match("^%[(.*)%]$")
+		if s then
+			sec = s
+			t[sec] = t[sec] or {}
+		elseif sec then
+			local k, v = line:match("^([^=]+)=(.*)$")
+			if k then t[sec][k] = v end
+		end
+	end
+	f:close()
+	return t
+end
+
+local function writeini(path, t)
+	local f = io.open(path, "w")
+	if not f then return end
+	local secs = {}
+	for s in pairs(t) do secs[#secs + 1] = s end
+	table.sort(secs)
+	for _, s in ipairs(secs) do
+		f:write("[", s, "]\n")
+		local keys = {}
+		for k in pairs(t[s]) do keys[#keys + 1] = k end
+		table.sort(keys)
+		for _, k in ipairs(keys) do f:write(k, "=", t[s][k], "\n") end
+	end
+	f:close()
+end
+
+-- storage: level (current .ld), world (world_data.txt), save, settings, lang
+function MF_read(storage, group, item)
+	local t = engine.ini[storage]
+	local v = t and t[group] and t[group][item]
+	return v ~= nil and tostring(v) or ""
+end
+
+function MF_store(storage, group, item, value)
+	local t = engine.ini[storage]
+	if not t then
+		t = {}
+		engine.ini[storage] = t
+	end
+	t[group] = t[group] or {}
+	t[group][item] = tostring(value)
+	if storage == "save" and engine.savefile then writeini(engine.savefile, t) end
+end
+
+function MF_setfile(storage, path) end -- files are chosen by the engine (gotolevel/boot)
+
+---------------------------------------------------------------- objects
+
 function MF_emptycreate(class, x, y)
 	local id = engine.nextid
 	engine.nextid = id + 1
@@ -36,6 +99,9 @@ function MF_emptycreate(class, x, y)
 	o.className = class
 	o.values[XPOS], o.values[YPOS] = x, y
 	o.values[ID] = -1
+	if class == "path" or class == "level" then o.strings[UNITNAME] = class end
+	-- a path's LEVELFILE is the level it sits in (save key "<level>,x,y"; hiddendata skips paths without it)
+	if class == "path" then o.strings[U_LEVELFILE] = generaldata.strings[CURRLEVEL] end
 	return id
 end
 
@@ -50,6 +116,14 @@ MF_specialcreate = MF_create
 function MF_remove(id) engine.objects[id] = nil end
 MF_cleanremove = MF_remove
 
+function MF_findunit_fixed(id) return engine.objects[id] ~= nil end
+
+function MF_getunits()
+	local t = {}
+	for i, u in ipairs(units) do t[i] = u.fixed end
+	return t
+end
+
 -- "a,b,c" -> {"a","b","c"}; empty string -> {}
 function MF_parsestring(s)
 	local t = {}
@@ -59,7 +133,109 @@ end
 
 function MF_setcolour(id, c1, c2)
 	local o = engine.objects[id]
-	if o then o.colour = { c1, c2 } end
+	if o then o.colour = { tonumber(c1), tonumber(c2) } end
+end
+
+-- Level icons are coloured from their COLOUR string, or CLEARCOLOUR once completed.
+function MF_updatelevelcolour(id)
+	local o = engine.objects[id]
+	if not o then return end
+	local s = o.strings[COLOUR]
+	if o.values[COMPLETED] == 3 and #o.strings[CLEARCOLOUR] > 0 then s = o.strings[CLEARCOLOUR] end
+	local c = MF_parsestring(#s > 0 and s or "1,2")
+	MF_setcolour(id, c[1], c[2])
+end
+
+---------------------------------------------------------------- map
+
+function MF_findlevelunit(name)
+	local t = {}
+	for _, u in ipairs(units) do
+		if u.strings[U_LEVELFILE] == name then t[#t + 1] = u.fixed end
+	end
+	return t
+end
+
+function MF_findpaths(x, y)
+	local t = {}
+	for _, id in ipairs(paths) do
+		local p = engine.objects[id]
+		if p and p.values[XPOS] == x and p.values[YPOS] == y then t[#t + 1] = id end
+	end
+	return t
+end
+
+-- shortcut: gates (paths that need N clears) are treated as plain paths; implement when a gate blocks progress
+function MF_findgates() return {} end
+
+-- completion: 0 invisible, 1 visible, 2 open, 3 completed
+function MF_savelevel(id, completion)
+	local o = engine.objects[id]
+	if not o then return end
+	o.values[COMPLETED] = completion
+	MF_store("save", generaldata.strings[WORLD], o.strings[U_LEVELFILE], completion)
+	MF_updatelevelcolour(id)
+end
+
+function MF_savepath(id, completion)
+	local o = engine.objects[id]
+	if not o then return end
+	o.values[COMPLETED] = completion
+	local key = generaldata.strings[CURRLEVEL] .. "," .. o.values[XPOS] .. "," .. o.values[YPOS]
+	MF_store("save", generaldata.strings[WORLD], key, completion)
+end
+
+-- mapcursor_enter puts the chosen level unit in vars.values[1] and asks for this loop.
+function MF_loop(name, n)
+	if name == "enterlevel" then engine.entering = mmf.newObject(VARS_ID).values[1] end
+end
+
+---------------------------------------------------------------- levels
+
+local levelnames = {}
+local function levelname(world, file)
+	local key = world .. "/" .. file
+	if levelnames[key] == nil then
+		local ld = engine.readini(engine.data .. "/Worlds/" .. key .. ".ld")
+		levelnames[key] = ld.general and ld.general.name or file
+	end
+	return levelnames[key]
+end
+
+function engine.ismap()
+	local g = engine.ini.level and engine.ini.level.general
+	return g ~= nil and g.leveltype == "1"
+end
+
+-- Level icons are not tiles: the engine makes one unit per [levels] entry of the .ld.
+local function addlevelicons()
+	local lv = engine.ini.level.levels or {}
+	local world = generaldata.strings[WORLD]
+	-- only the first [general] levels= entries are live; .ld files keep stale entries past that
+	local count = tonumber((engine.ini.level.general or {}).levels) or 0
+	local i = 0
+	while i < count and lv[i .. "file"] do
+		local file = lv[i .. "file"]
+		local id = MF_emptycreate("level", tonumber(lv[i .. "X"]) or 0, tonumber(lv[i .. "Y"]) or 0)
+		local o = engine.objects[id]
+		o.strings[NAME] = "level"
+		o.strings[UNITTYPE] = "object"
+		o.strings[U_LEVELFILE] = file
+		o.strings[U_LEVELNAME] = (lv[i .. "name"] or "") ~= "" and lv[i .. "name"] or levelname(world, file)
+		o.strings[COLOUR] = lv[i .. "colour"] or ""
+		o.strings[CLEARCOLOUR] = lv[i .. "clearcolour"] or ""
+		o.values[VISUALLEVEL] = tonumber(lv[i .. "number"]) or 0
+		o.values[VISUALSTYLE] = tonumber(lv[i .. "style"]) or 0
+		-- .ld state is left over from editor playtests; only "open" (2) counts as a default, the save decides the rest
+		local default = (tonumber(lv[i .. "state"]) or 0) >= 2 and 2 or 0
+		o.values[COMPLETED] = math.max(default, tonumber(MF_read("save", world, file)) or 0)
+		o.values[TILING] = -1
+		o.values[ZLAYER] = 15
+		o.values[DIR] = 3
+		o.values[ONLINE] = 1
+		addunit(id, false, true)
+		i = i + 1
+	end
 end
 
 -- level: { w, h, layers = { { tiles = {...}, dirs = {...} }, ... } }, tiles 0-based row-major, ids = tile[1] + tile[2]*256
@@ -72,7 +248,9 @@ function engine.loadlevel(level)
 	generaldata.values[DISABLEPARTICLES] = 1
 	changes = changes or {} -- shortcut: .ld object overrides not loaded yet; they belong here
 	clearunits()
-	-- shortcut: old level's unit objects are never freed; drop them here when level switching exists
+	for id in pairs(engine.objects) do
+		if id >= SYSTEM_IDS then engine.objects[id] = nil end
+	end
 	engine.edge = {}
 
 	local byid = {}
@@ -93,52 +271,177 @@ function engine.loadlevel(level)
 			end
 		end
 	end
+
+	local g = engine.ini.level and engine.ini.level.general or {}
+	addlevelicons()
+	for i = 0, (tonumber(g.paths) or 0) - 1 do addpath(i) end
+	for i = 0, (tonumber(g.specials) or 0) - 1 do addspecial(i) end
+	loadlevelcompletion()
 	dynamictiling()
 	updatecolours()
 	startblock()
+	if engine.ismap() then
+		openlevels()
+		-- the reveal leaves new paths/levels at 1 until the engine's unlock animation ends; we have none, so apply the saved state now
+		loadlevelcompletion()
+		mapcursor_load()
+		mapcursor_levelstart()
+	end
+end
+
+-- Loads Worlds/<world>/<name>.l/.ld and makes it the current level.
+function engine.gotolevel(name)
+	local base = engine.data .. "/Worlds/" .. generaldata.strings[WORLD] .. "/" .. name
+	local level = engine_readlevel(base .. ".l")
+	if not level then
+		engine.message = "cannot load " .. name
+		return false
+	end
+	engine.ini.level = engine.readini(base .. ".ld")
+	local g = engine.ini.level.general or {}
+	engine.world = generaldata.strings[WORLD]
+	engine.palette = (g.palette or "") ~= "" and g.palette or "default.png"
+	engine.roomw, engine.roomh = level.w, level.h
+	local im = engine.ini.level.images or {}
+	engine.images = {}
+	for i = 0, (tonumber(im.total) or 0) - 1 do engine.images[#engine.images + 1] = im[tostring(i)] end
+	engine.levelserial = engine.levelserial + 1
+	generaldata.strings[CURRLEVEL] = name
+	engine.loadlevel(level)
+	engine.message = g.name or name
+	return true
+end
+
+-- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
+function engine.boot()
+	init(1, 1, 1, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
+	setupmenu(10, 11, 12, 13, 14, 15, true) -- editor objects; map code reads editor.values
+	generaldata.strings[WORLD] = "baba"
+	generaldata.strings[BASEWORLD] = "baba"
+	generaldata.strings[CURRLEVEL] = ""
+	engine.ini.world = engine.readini(engine.data .. "/Worlds/baba/world_data.txt")
+	engine.ini.save = engine.savefile and engine.readini(engine.savefile) or {}
+	firstlevel()
+	-- shortcut: the real engine restores the level tree from the save; we only know the start map
+	if #leveltree == 0 then sublevel(generaldata.strings[CURRLEVEL], 0, 0) end
+	return engine.gotolevel(generaldata.strings[CURRLEVEL])
 end
 
 -- shortcut: restart is a plain reload, so it can't be undone like in the real game
 function MF_restart(instant)
-	engine.loadlevel(engine.current)
+	engine.gotolevel(generaldata.strings[CURRLEVEL])
 end
 
 -- block() calls this when a YOU unit is on a WIN unit.
--- shortcut: no win animation/sound or save/map progress yet; the level just stops taking moves
+-- shortcut: no win animation/sound; we save, then go up to the map at the end of the turn
 function MF_win()
+	MF_store("save", generaldata.strings[WORLD], generaldata.strings[CURRLEVEL], 3)
 	engine.won = true
 end
 
--- One player input per turn: key is a name from the game's `keys` table (right/up/left/down/idle/undo/restart).
+local function goup()
+	if #leveltree <= 1 then return false end
+	uplevel()
+	return engine.gotolevel(generaldata.strings[CURRLEVEL])
+end
+
+-- One player input per turn: right/up/left/down/idle/undo/restart from the game's `keys` table,
+-- plus "enter" (enter level on a map, otherwise wait) and "leave" (back to the map).
 function engine.input(key)
+	if key == "leave" then
+		goup()
+		return
+	end
 	if engine.won and key ~= "restart" then return end
+	if key == "enter" then
+		if engine.ismap() then
+			mapcursor_enter(VARS_ID)
+		else
+			key = "idle"
+		end
+	end
 	if key == "undo" then
 		undo()
 		updatecode = 1
 		code()
-	else
+	elseif key ~= "enter" then
 		command(key)
 		block()
 		newundo()
 	end
+
+	if engine.entering then
+		local l = engine.objects[engine.entering]
+		engine.entering = nil
+		if l then
+			sublevel(l.strings[U_LEVELFILE], l.values[VISUALLEVEL], l.values[VISUALSTYLE])
+			engine.gotolevel(l.strings[U_LEVELFILE])
+		end
+	elseif engine.won then
+		local done = engine.message
+		if goup() then engine.message = "Cleared: " .. done .. "\n" .. engine.message end
+	end
 end
 
--- Units in draw order: { sprite, root, frame, x, y, c1, c2 }
+---------------------------------------------------------------- drawing
+
+-- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer }; sprite "#box" = filled tile.
 function engine.drawlist()
 	local list = {}
+	local function add(...) list[#list + 1] = { ... } end
+
+	-- open paths: the path object's sprite, joined to neighbouring paths/levels when it tiles
+	local open = {}
+	for _, id in ipairs(paths) do
+		local p = engine.objects[id]
+		if p and p.values[COMPLETED] >= 1 then open[p.values[XPOS] + p.values[YPOS] * roomsizex] = p end
+	end
+	for _, u in ipairs(units) do
+		if u.className == "level" and u.values[COMPLETED] >= 1 then open[u.values[XPOS] + u.values[YPOS] * roomsizex] = u end
+	end
+	for _, p in pairs(open) do
+		local t = tileslist[p.strings[PATH_OBJECT]]
+		if p.className == "path" and t then
+			local x, y, frame = p.values[XPOS], p.values[YPOS], 0
+			if t.tiling == 1 then
+				for d, v in ipairs({ { 1, 0 }, { 0, -1 }, { -1, 0 }, { 0, 1 } }) do
+					if open[x + v[1] + (y + v[2]) * roomsizex] then frame = frame | (1 << (d - 1)) end
+				end
+			end
+			local c = t.colour or { 0, 3 }
+			add(t.sprite, t.sprite_in_root ~= false, frame, x, y, c[1], c[2], 1)
+		end
+	end
+
 	for _, u in ipairs(units) do
 		local t = tileslist[u.className]
-		if t and u.visible then
+		if u.className == "level" then
+			if u.values[COMPLETED] >= 1 then
+				local c = u.colour or { 1, 2 }
+				local x, y, n = u.values[XPOS], u.values[YPOS], u.values[VISUALLEVEL]
+				add("#box", true, 0, x, y, c[1], c[2], u.values[ZLAYER])
+				-- style 0 = number, 1 = letter, 2 = dot; shortcut: icons (-1) and numbers >= 10 show as a plain box
+				if u.values[VISUALSTYLE] == 0 and n < 10 then
+					add("text_" .. n, true, 0, x, y, 0, 4, u.values[ZLAYER])
+				elseif u.values[VISUALSTYLE] == 1 and n < 26 then
+					add("text_" .. string.char(97 + n), true, 0, x, y, 0, 4, u.values[ZLAYER])
+				elseif u.values[VISUALSTYLE] == 2 then
+					add("dot", true, 0, x, y, 0, 4, u.values[ZLAYER])
+				end
+			end
+		elseif t and u.visible then
 			local tiling = u.values[TILING]
 			local frame = 0
 			if tiling == 1 then frame = u.direction
 			elseif tiling == 0 or tiling == 2 or tiling == 3 then frame = u.values[DIR] * 8 end
 			local c = u.colour or t.colour or { 0, 3 }
-			list[#list + 1] = { t.sprite or u.className, t.sprite_in_root ~= false, frame,
-				u.values[XPOS], u.values[YPOS], c[1], c[2], u.values[ZLAYER] }
+			add(t.sprite or u.className, t.sprite_in_root ~= false, frame,
+				u.values[XPOS], u.values[YPOS], c[1], c[2], u.values[ZLAYER])
 		end
 	end
-	table.sort(list, function(a, b) return a[8] < b[8] end)
+	-- stable by layer, then insertion order
+	for i, e in ipairs(list) do e[9] = i end
+	table.sort(list, function(a, b) if a[8] ~= b[8] then return a[8] < b[8] end return a[9] < b[9] end)
 	return list
 end
 

@@ -43,14 +43,50 @@ static int run_dir(lua_State *L, const char *dir, const char **first, int nfirst
     return err;
 }
 
-lua_State *script_open(const char *data, const char *shim_path) {
+// engine_readlevel(path) -> { w, h, layers = { { tiles = {...}, dirs = {...} } } } or nil
+static int l_readlevel(lua_State *L) {
+    Level lv;
+    if (level_load(luaL_checkstring(L, 1), &lv)) { lua_pushnil(L); return 1; }
+    lua_newtable(L);
+    lua_pushinteger(L, lv.layers[0].w);
+    lua_setfield(L, -2, "w");
+    lua_pushinteger(L, lv.layers[0].h);
+    lua_setfield(L, -2, "h");
+    lua_newtable(L);
+    for (int l = 0; l < lv.nlayers; l++) {
+        const Layer *ly = &lv.layers[l];
+        lua_newtable(L);
+        lua_createtable(L, ly->w * ly->h, 0);
+        for (uint32_t i = 0; i < ly->w * ly->h; i++) { lua_pushinteger(L, ly->tiles[i]); lua_rawseti(L, -2, i + 1); }
+        lua_setfield(L, -2, "tiles");
+        if (ly->dirs) {
+            lua_createtable(L, ly->w * ly->h, 0);
+            for (uint32_t i = 0; i < ly->w * ly->h; i++) { lua_pushinteger(L, ly->dirs[i]); lua_rawseti(L, -2, i + 1); }
+            lua_setfield(L, -2, "dirs");
+        }
+        lua_rawseti(L, -2, l + 1);
+    }
+    lua_setfield(L, -2, "layers");
+    level_free(&lv);
+    return 1;
+}
+
+lua_State *script_open(const char *data, const char *shim_path, const char *savefile) {
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
+    lua_register(L, "engine_readlevel", l_readlevel);
     // constants/values first: other files use their globals at load time
     const char *first[] = {"constants.lua", "values.lua"};
     char editor[512];
     snprintf(editor, sizeof editor, "%s/Editor", data);
-    if (run(L, shim_path) || run_dir(L, data, first, 2) || run_dir(L, editor, NULL, 0)) { lua_close(L); return NULL; }
+    if (run(L, shim_path)) { lua_close(L); return NULL; }
+    lua_getglobal(L, "engine");
+    lua_pushstring(L, data);
+    lua_setfield(L, -2, "data");
+    lua_pushstring(L, savefile);
+    lua_setfield(L, -2, "savefile");
+    lua_pop(L, 1);
+    if (run_dir(L, data, first, 2) || run_dir(L, editor, NULL, 0)) { lua_close(L); return NULL; }
     return L;
 }
 
@@ -67,36 +103,49 @@ int script_call(lua_State *L, int nargs, int nresults) {
     return r;
 }
 
-int script_loadlevel(lua_State *L, const Level *lv) {
+static int engine_call(lua_State *L, const char *fn, const char *arg) {
     lua_getglobal(L, "engine");
-    lua_getfield(L, -1, "loadlevel");
-    lua_newtable(L);
-    lua_pushinteger(L, lv->layers[0].w);
-    lua_setfield(L, -2, "w");
-    lua_pushinteger(L, lv->layers[0].h);
-    lua_setfield(L, -2, "h");
-    lua_newtable(L);
-    for (int l = 0; l < lv->nlayers; l++) {
-        const Layer *ly = &lv->layers[l];
-        lua_newtable(L);
-        lua_createtable(L, ly->w * ly->h, 0);
-        for (uint32_t i = 0; i < ly->w * ly->h; i++) { lua_pushinteger(L, ly->tiles[i]); lua_rawseti(L, -2, i + 1); }
-        lua_setfield(L, -2, "tiles");
-        if (ly->dirs) {
-            lua_createtable(L, ly->w * ly->h, 0);
-            for (uint32_t i = 0; i < ly->w * ly->h; i++) { lua_pushinteger(L, ly->dirs[i]); lua_rawseti(L, -2, i + 1); }
-            lua_setfield(L, -2, "dirs");
-        }
-        lua_rawseti(L, -2, l + 1);
-    }
-    lua_setfield(L, -2, "layers");
-    int r = script_call(L, 1, 0);
-    lua_pop(L, 1);
-    return r;
+    lua_getfield(L, -1, fn);
+    lua_remove(L, -2);
+    if (arg) lua_pushstring(L, arg);
+    return script_call(L, arg ? 1 : 0, 0);
 }
 
-void script_draw(lua_State *L, uint8_t *fb) {
+int script_start(lua_State *L) { return engine_call(L, "boot", NULL); }
+
+const char *script_string(lua_State *L, const char *field) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, field);
+    const char *s = lua_tostring(L, -1); // engine keeps the string alive
+    lua_pop(L, 2);
+    return s ? s : "";
+}
+
+void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh) {
+    static int serial = -1;
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "levelserial");
+    int now = lua_tointeger(L, -1);
+    lua_pop(L, 2);
+    if (now != serial) {
+        serial = now;
+        lua_getglobal(L, "engine");
+        lua_getfield(L, -1, "roomw");
+        lua_getfield(L, -2, "roomh");
+        int w = lua_tointeger(L, -2), h = lua_tointeger(L, -1);
+        lua_pop(L, 3);
+        if (render_begin_level(script_string(L, "data"), script_string(L, "world"), script_string(L, "palette"), w, h, fbw, fbh))
+            printf("cannot load palette %s\n", script_string(L, "palette"));
+    }
     render_clear(fb);
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "images");
+    for (int i = 1; lua_istable(L, -1) && i <= (int)lua_rawlen(L, -1); i++) {
+        lua_rawgeti(L, -1, i);
+        render_image(fb, lua_tostring(L, -1));
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 2);
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "drawlist");
     lua_remove(L, -2);
@@ -116,32 +165,4 @@ void script_draw(lua_State *L, uint8_t *fb) {
     lua_pop(L, 1);
 }
 
-int script_startlevel(lua_State *L, const char *data, const char *world, const char *level, int fbw, int fbh) {
-    char path[512], palette[64];
-    Level lv;
-    snprintf(path, sizeof path, "%s/Worlds/%s/%s.l", data, world, level);
-    if (level_load(path, &lv)) { printf("cannot load %s\n", path); return -1; }
-    snprintf(path, sizeof path, "%s/Worlds/%s/%s.ld", data, world, level);
-    level_palette(path, palette, sizeof palette);
-    int r = render_begin_level(data, world, palette, lv.layers[0].w, lv.layers[0].h, fbw, fbh);
-    if (r) printf("cannot load palette %s\n", palette);
-    else r = script_loadlevel(L, &lv);
-    level_free(&lv);
-    return r;
-}
-
-int script_input(lua_State *L, const char *key) {
-    lua_getglobal(L, "engine");
-    lua_getfield(L, -1, "input");
-    lua_remove(L, -2);
-    lua_pushstring(L, key);
-    return script_call(L, 1, 0);
-}
-
-int script_won(lua_State *L) {
-    lua_getglobal(L, "engine");
-    lua_getfield(L, -1, "won");
-    int won = lua_toboolean(L, -1);
-    lua_pop(L, 2);
-    return won;
-}
+int script_input(lua_State *L, const char *key) { return engine_call(L, "input", key); }

@@ -12,15 +12,16 @@ Needs devkitPro with `3ds-dev 3ds-zlib`.
 2. Copy `baba3ds.3dsx` to `sdmc:/3ds/` and launch from the Homebrew Launcher.
 
 ## Controls
-D-pad/Circle Pad move, B undo, A wait, X restart, START quit.
-In Azahar (default keys): arrows move, S undo, A wait, Z restart, M quit.
+D-pad/Circle Pad move, B undo, A wait (in a level) / enter level (on the map), X restart, SELECT back to map, START quit.
+In Azahar (default keys): arrows move, S undo, A wait/enter, Z restart, N back to map, M quit.
+Progress is saved to `sdmc:/3ds/baba/save.ini`.
 
 ## Host tests (Mac/Linux, need zlib)
 
     test/build_host.sh
     test/level_test.sh <path to Data>        # C level parser vs Python on every level
-    build-host/script_test <path to Data>    # plays level 1 through the game's scripts: move, push, undo, restart
-    build-host/render_test <path to Data> baba 0level out.ppm right right   # render after keys
+    build-host/script_test <path to Data>    # runs test/play_test.lua: level 1, win, map, enter level 2, leave
+    build-host/render_test <path to Data> out.ppm [save.ini] [keys...]  # boot with a save, play keys, render
 
 Emulator screenshot (Azahar running with RPC server enabled; copy AzaharRPC.py from Azahar's scripting/ folder into tools/):
 

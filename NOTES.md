@@ -24,8 +24,26 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Unit drawing: tiling 1 frame = `unit.direction` (set by dynamictiling), tiling 0/2/3 = DIR*8. Colour set by game via `MF_setcolour`.
 - Particles: off via `generaldata.values[DISABLEPARTICLES] = 1`.
 - Status: level 1 plays on host test (move, push, undo, restart asserted) and runs on Azahar.
-- Win: game's block() calls MF_win(); shim sets engine.won and ignores input except restart.
-- Next: walk animation frames, level switching/map, .ld object overrides, sound.
+- Win: game's block() calls MF_win(); shim saves completion 3 and goes up a level (uplevel) to the map.
+- Data/MF_documentation.txt (ships with the game) documents most MF_* functions. Read it first.
+
+## Map (verified on host: win level 1 -> map -> path revealed -> enter level 2 -> leave)
+- Boot: init, setupmenu (map code needs `editor`), WORLD/BASEWORLD = "baba", `firstlevel()` picks level (fresh save: 0level; else start map).
+- Level tree: sublevel(file) on enter, uplevel() on win/leave; CURRLEVEL is the level to load.
+- Map .ld: `[general] leveltype=1`, `levels=N` (only first N `[levels]` entries are live; stale ones follow),
+  `paths=N`, `specials=N`, `selectorX/Y`, `[images] total/0/1` = full-colour backgrounds in Worlds/<w>/Images/<name>_1.png (792x432).
+- Engine creates one `level` unit per [levels] entry (U_LEVELFILE, U_LEVELNAME from target .ld name, COLOUR/CLEARCOLOUR,
+  VISUALLEVEL=number, VISUALSTYLE=style 0 num/1 letter/2 dot/-1 icon, COMPLETED). `.ld state` is editor leftover: only 2 (open) is a default; save decides the rest.
+- Paths: `addpath(i)` (game); engine must set path strings[LEVELFILE] = current level (save key "<level>,x,y").
+- Map load order: tiles, level icons, addpath, addspecial, loadlevelcompletion, dynamictiling, updatecolours, startblock,
+  openlevels (reveals via unlocklevels/hiddendata), loadlevelcompletion again (stand-in for unlock animation), mapcursor_load, mapcursor_levelstart.
+- Cursor moves only onto visible units with COMPLETED > 1 (mapcursor_move). Enter: mapcursor_enter(vars) -> MF_loop("enterlevel") with vars.values[1] = level unit.
+- Completion: 0 invisible, 1 visible, 2 open, 3 completed (MF_savelevel/MF_savepath persist to save).
+- Save: ini at sdmc:/3ds/baba/save.ini, section = world.
+
+## Next
+- Gates (MF_findgates), level icons for style -1 ([icons] section), numbers >= 10, unlock animation.
+- Walk animation frames, .ld object overrides (`changes`), sound, music.
 
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels
 - `ACHTUNG!`, u16 version (261), `MAP ` chunk (u32 size + data), `LAYR` chunk: u32 size, u16 layer count.

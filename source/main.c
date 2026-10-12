@@ -1,10 +1,12 @@
 #include <3ds.h>
 #include <stdio.h>
+#include <string.h>
 #include "script.h"
 
 #define DATA_DIR "sdmc:/3ds/baba/Data"
+#define SAVE_FILE "sdmc:/3ds/baba/save.ini"
 
-#define HELP "baba3ds\nD-pad/Circle move  B undo  A wait\nX restart  START quit\n\n"
+#define HELP "baba3ds\nD-pad/Circle move  B undo  X restart\nA wait / enter level  SELECT back to map\nSTART quit\n\n"
 
 static uint8_t frame[400 * 240 * 3];
 
@@ -19,6 +21,15 @@ static void present(void) {
         }
 }
 
+// Reprints the help plus the shim's message (level name, "Cleared: ...") when the message changes.
+static void show_message(lua_State *L) {
+    static char last[256] = "\x01";
+    const char *msg = script_string(L, "message");
+    if (!strcmp(msg, last)) return;
+    snprintf(last, sizeof last, "%s", msg);
+    printf("\x1b[2J\x1b[H" HELP "%s\n", last);
+}
+
 int main(void) {
     gfxInitDefault();
     gfxSetDoubleBuffering(GFX_TOP, false);
@@ -26,10 +37,10 @@ int main(void) {
     romfsInit();
     printf(HELP);
 
-    lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua");
-    int ok = L && !script_startlevel(L, DATA_DIR, "baba", "0level", 400, 240);
+    lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua", SAVE_FILE);
+    int ok = L && !script_start(L);
     if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\n");
-    else { script_draw(L, frame); present(); }
+    else { script_draw(L, frame, 400, 240); present(); show_message(L); }
 
     hidSetRepeatParameters(15, 6);
     while (aptMainLoop()) {
@@ -39,15 +50,13 @@ int main(void) {
         if (ok) {
             // KEY_RIGHT etc. = D-pad or Circle Pad (Azahar maps the keyboard arrows to the Circle Pad)
             const char *key = rep & KEY_RIGHT ? "right" : rep & KEY_UP ? "up" : rep & KEY_LEFT ? "left"
-                            : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : rep & KEY_A ? "idle"
-                            : down & KEY_X ? "restart" : NULL;
+                            : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : down & KEY_A ? "enter"
+                            : down & KEY_X ? "restart" : down & KEY_SELECT ? "leave" : NULL;
             if (key) {
-                int was_won = script_won(L);
                 script_input(L, key);
-                script_draw(L, frame);
+                script_draw(L, frame, 400, 240);
                 present();
-                if (!was_won && script_won(L)) printf("Congratulations!\nX to play again\n");
-                else if (was_won && !script_won(L)) printf("\x1b[2J\x1b[H" HELP);
+                show_message(L);
             }
         }
         gfxFlushBuffers();
