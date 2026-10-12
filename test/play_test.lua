@@ -13,8 +13,13 @@ assert(generaldata.strings[CURRLEVEL] == "0level", "fresh save should start on l
 local b = find("baba")
 local x0 = b.values[XPOS]
 print("level 1:", #units, "units; rules: " .. rules())
+local f0 = b.direction
 for i = 1, 3 do engine.input("right") end
 assert(b.values[XPOS] == x0 + 3, "baba did not move")
+assert(b.direction ~= f0 and b.direction // 8 == 0, "walking right should advance the walk frame, got " .. b.direction)
+engine.input("up")
+assert(b.direction // 8 == 1, "facing up should use the up frames, got " .. b.direction)
+engine.input("undo")
 engine.input("undo")
 assert(b.values[XPOS] == x0 + 2, "undo did not step back")
 local function rockat(x, y)

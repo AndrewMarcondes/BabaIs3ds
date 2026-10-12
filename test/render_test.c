@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
         } else if (script_input(L, argv[i])) return 1;
     }
     static uint8_t fb[400 * 240 * 3];
-    script_draw(L, fb, 400, 240);
+    script_draw(L, fb, 400, 240, 1);
     printf("%s\n", script_string(L, "message"));
     FILE *f = fopen(argv[2], "wb");
     fprintf(f, "P6 400 240 255\n");

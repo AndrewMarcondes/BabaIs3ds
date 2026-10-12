@@ -43,9 +43,9 @@ int main(void) {
     u64 t1 = osGetTime();
     if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\n");
     else {
-        script_draw(L, frame, 400, 240);
+        script_draw(L, frame, 400, 240, 1);
         u64 t2 = osGetTime();
-        script_draw(L, frame, 400, 240); // second draw: sprites cached, the per-turn cost
+        script_draw(L, frame, 400, 240, 1); // second draw: sprites cached, the per-turn cost
         u64 t3 = osGetTime();
         present();
         show_message(L);
@@ -53,6 +53,7 @@ int main(void) {
     }
 
     hidSetRepeatParameters(15, 6);
+    int wobble = 1, vblanks = 0;
     while (aptMainLoop()) {
         hidScanInput();
         u32 down = hidKeysDown(), rep = hidKeysDownRepeat();
@@ -62,11 +63,21 @@ int main(void) {
             const char *key = rep & KEY_RIGHT ? "right" : rep & KEY_UP ? "up" : rep & KEY_LEFT ? "left"
                             : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : down & KEY_A ? "enter"
                             : down & KEY_X ? "restart" : down & KEY_SELECT ? "leave" : NULL;
+            int redraw = 0;
             if (key) {
                 script_input(L, key);
-                script_draw(L, frame, 400, 240);
-                present();
                 show_message(L);
+                redraw = 1;
+            }
+            if (++vblanks >= 12) { // ~5 per second, like the original's sprite wobble
+                vblanks = 0;
+                wobble = wobble % 3 + 1;
+                script_tick(L);
+                redraw = 1;
+            }
+            if (redraw) {
+                script_draw(L, frame, 400, 240, wobble);
+                present();
             }
         }
         gfxFlushBuffers();

@@ -4,18 +4,36 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define CACHE_SIZE 2048 // power of two; open addressing, cleared when 3/4 full
+
 typedef struct {
-    char path[512];
-    uint8_t *px; // ts*ts RGBA, pre-scaled
+    char *path;  // NULL = empty slot
+    uint8_t *px; // scaled RGBA; NULL if the file is missing
 } Sprite;
 
 static struct {
     char data[256], world[64];
     uint8_t *pal;
     int pw, ph, fbw, fbh, ts, ox, oy, vw, vh;
-    Sprite cache[256];
+    Sprite cache[CACHE_SIZE];
     int ncache;
 } R;
+
+static unsigned hash(const char *s) {
+    unsigned h = 2166136261u;
+    while (*s) h = (h ^ (unsigned char)*s++) * 16777619u;
+    return h;
+}
+
+static void cache_clear(void) {
+    for (int i = 0; i < CACHE_SIZE; i++) {
+        free(R.cache[i].path);
+        free(R.cache[i].px);
+        R.cache[i].path = NULL;
+        R.cache[i].px = NULL;
+    }
+    R.ncache = 0;
+}
 
 #define PAL(x, y) (R.pal + (((y) % R.ph) * R.pw + ((x) % R.pw)) * 4)
 
@@ -42,15 +60,23 @@ static uint8_t *scale(const uint8_t *src, int sw, int sh, int dw, int dh) {
 }
 
 // Loads and scales an image to w*h, cached by path. Missing files are cached as NULL so each is reported once.
+// The returned pixels are only valid until the next call (a full cache is cleared).
 static const uint8_t *get_image(const char *path, int dw, int dh) {
-    for (int i = 0; i < R.ncache; i++)
+    unsigned i = hash(path) & (CACHE_SIZE - 1);
+    for (; R.cache[i].path; i = (i + 1) & (CACHE_SIZE - 1))
         if (!strcmp(R.cache[i].path, path)) return R.cache[i].px;
+    if (R.ncache >= CACHE_SIZE * 3 / 4) {
+        cache_clear();
+        i = hash(path) & (CACHE_SIZE - 1);
+    }
     int w, h;
     uint8_t *raw = png_load(path, &w, &h);
     if (!raw) printf("missing sprite %s\n", path);
     uint8_t *px = raw ? scale(raw, w, h, dw, dh) : NULL;
     free(raw);
-    if (R.ncache < 256) { snprintf(R.cache[R.ncache].path, sizeof R.cache[0].path, "%s", path); R.cache[R.ncache++].px = px; }
+    R.cache[i].path = strdup(path);
+    R.cache[i].px = px;
+    R.ncache++;
     return px;
 }
 
@@ -60,9 +86,8 @@ static void fill(uint8_t *fb, int x, int y, int w, int h, const uint8_t *c) {
 }
 
 void render_end_level(void) {
-    for (int i = 0; i < R.ncache; i++) free(R.cache[i].px);
+    cache_clear();
     free(R.pal);
-    R.ncache = 0;
     R.pal = NULL;
 }
 
@@ -89,7 +114,7 @@ void render_clear(uint8_t *fb) {
     fill(fb, R.ox, R.oy, R.vw * R.ts, R.vh * R.ts, PAL(0, 4));
 }
 
-void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int x, int y, int c1, int c2) {
+void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int x, int y, int c1, int c2) {
     if (x < 1 || y < 1 || x > R.vw || y > R.vh) return;
     if (sprite[0] == '#') { // "#box": solid tile with a 1px gap, for level icons the engine draws itself
         fill(fb, R.ox + (x - 1) * R.ts + 1, R.oy + (y - 1) * R.ts + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
@@ -100,7 +125,7 @@ void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int x, 
     if (sprite[0] == '@') // "@name": exact file name, e.g. map icons "icon_lake_1"
         snprintf(path, sizeof path, "%s/%s%s%sSprites/%s.png", R.data, dir, world, slash, sprite + 1);
     else
-        snprintf(path, sizeof path, "%s/%s%s%sSprites/%s_%d_1.png", R.data, dir, world, slash, sprite, frame);
+        snprintf(path, sizeof path, "%s/%s%s%sSprites/%s_%d_%d.png", R.data, dir, world, slash, sprite, frame, wobble);
     const uint8_t *spr = get_image(path, R.ts, R.ts);
     if (!spr) return;
     const uint8_t *c = PAL(c1, c2);

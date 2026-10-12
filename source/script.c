@@ -121,7 +121,7 @@ const char *script_string(lua_State *L, const char *field) {
     return s ? s : "";
 }
 
-void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh) {
+void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
     static int serial = -1;
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "levelserial");
@@ -159,10 +159,12 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh) {
         lua_rawgeti(L, -1, 2);
         int root = lua_toboolean(L, -1);
         lua_rawgeti(L, -2, 1);
-        render_sprite(fb, lua_tostring(L, -1), root, v[0], v[1], v[2], v[3], v[4]);
+        render_sprite(fb, lua_tostring(L, -1), root, v[0], wobble, v[1], v[2], v[3], v[4]);
         lua_pop(L, 3);
     }
     lua_pop(L, 1);
 }
 
 int script_input(lua_State *L, const char *key) { return engine_call(L, "input", key); }
+
+int script_tick(lua_State *L) { return engine_call(L, "tick", NULL); }

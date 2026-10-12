@@ -43,7 +43,9 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 
 ## Next
 - Gates (MF_findgates), level numbers >= 10, unlock animation.
-- Walk animation frames, sound, music.
+- Sound, music.
+- Animation: walk frame = VISUALDIR (movement.lua advances it), `animate()` turns it into unit.direction (DIR*8+VISUALDIR for tiling 2/3,
+  VISUALDIR for 4). Engine calls animate() after turns and on a ~200ms timer; all sprites also wobble through _1/_2/_3 files on that timer.
 - Object overrides: per changed object MF_create + addchange + MF_cleanremove before units; addunit applies (dochanges). Sprite = changes[class].image/root.
 
 ## Levels (`Worlds/<world>/NNlevel.l` + `.ld`), parser: `tools/baba_level.py`, verified on all 600 levels

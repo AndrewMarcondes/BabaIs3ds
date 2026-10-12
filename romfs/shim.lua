@@ -291,6 +291,7 @@ function engine.loadlevel(level)
 	dynamictiling()
 	updatecolours()
 	startblock()
+	animate()
 	if engine.ismap() then
 		openlevels()
 		-- the reveal leaves new paths/levels at 1 until the engine's unlock animation ends; we have none, so apply the saved state now
@@ -381,6 +382,8 @@ function engine.input(key)
 		newundo()
 	end
 
+	animate()
+
 	if engine.entering then
 		local l = engine.objects[engine.entering]
 		engine.entering = nil
@@ -392,6 +395,12 @@ function engine.input(key)
 		local done = engine.message
 		if goup() then engine.message = "Cleared: " .. done .. "\n" .. engine.message end
 	end
+end
+
+-- Animation timer (the original engine calls animate() on a timer too): cycles animated objects (tiling 3/4).
+-- shortcut: animate() also re-derives walk frames, which only change on turns; fine since it is idempotent for them
+function engine.tick()
+	animate()
 end
 
 ---------------------------------------------------------------- drawing
@@ -447,8 +456,9 @@ function engine.drawlist()
 		elseif t and u.visible then
 			local tiling = u.values[TILING]
 			local frame = 0
-			if tiling == 1 then frame = u.direction
-			elseif tiling == 0 or tiling == 2 or tiling == 3 then frame = u.values[DIR] * 8 end
+			-- tiling 1 (dynamictiling) and 2/3/4 (animate) keep their sprite frame in unit.direction
+			if tiling == 1 or tiling >= 2 then frame = u.direction
+			elseif tiling == 0 then frame = u.values[DIR] * 8 end
 			local c = u.colour or t.colour or { 0, 3 }
 			local ch = changes[u.className] or {}
 			local root = t.sprite_in_root ~= false

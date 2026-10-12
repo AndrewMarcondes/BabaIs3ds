@@ -16,8 +16,11 @@ int script_start(lua_State *L);
 // One turn of input: right/up/left/down/idle/undo/restart, or "enter"/"leave" for the map.
 int script_input(lua_State *L, const char *key);
 
-// Draws the current level state; sets the renderer up again whenever the level changed.
-void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh);
+// Draws the current level state (wobble = sprite frame 1..3); sets the renderer up again whenever the level changed.
+void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble);
+
+// Animation timer step (~5 per second): advances animated objects.
+int script_tick(lua_State *L);
 
 // engine.<field> as a string ("" if unset), e.g. "message".
 const char *script_string(lua_State *L, const char *field);
