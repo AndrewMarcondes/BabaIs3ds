@@ -19,10 +19,17 @@ uint8_t *png_load(const char *path, int *ow, int *oh) {
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
     fseek(f, 0, SEEK_SET);
-    uint8_t *b = malloc(len), *idat = NULL, *raw = NULL, *out = NULL;
-    int ok = b && fread(b, 1, len, f) == (size_t)len;
+    uint8_t *b = len > 0 ? malloc(len) : NULL, *out = NULL;
+    if (b && fread(b, 1, len, f) == (size_t)len) out = png_decode(b, len, ow, oh);
     fclose(f);
-    if (!ok || len < 33 || memcmp(b, "\x89PNG\r\n\x1a\n", 8)) goto fail;
+    free(b);
+    return out;
+}
+
+uint8_t *png_decode(const uint8_t *b, long len, int *ow, int *oh) {
+    *ow = *oh = 0;
+    uint8_t *idat = NULL, *raw = NULL, *out = NULL;
+    if (len < 33 || memcmp(b, "\x89PNG\r\n\x1a\n", 8)) goto fail;
 
     uint32_t w = be32(b + 16), h = be32(b + 20);
     int depth = b[24], ctype = b[25], interlace = b[28];
@@ -75,7 +82,6 @@ uint8_t *png_load(const char *path, int *ow, int *oh) {
     *ow = w;
     *oh = h;
 fail:
-    free(b);
     free(idat);
     free(raw);
     if (out && !*ow) { free(out); out = NULL; }

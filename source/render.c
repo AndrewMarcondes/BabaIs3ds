@@ -60,6 +60,61 @@ static uint8_t *scale(const uint8_t *src, int sw, int sh, int dw, int dh) {
     return out;
 }
 
+// Optional Data/sprites.pak from tools/prepare_sd.py: all sprite PNGs in one file, so the SD card isn't hit with
+// thousands of tiny files. Format: "BPK1", u32 count, count x (u32 offset, u32 size, u16 len, name), sorted by name.
+static struct {
+    FILE *f;
+    int n, tried;
+    char **name;
+    uint32_t *off, *size;
+} P;
+
+static uint32_t le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+
+static void pack_open(void) {
+    P.tried = 1;
+    char path[300];
+    snprintf(path, sizeof path, "%s/sprites.pak", R.data);
+    FILE *f = fopen(path, "rb");
+    uint8_t h[10];
+    if (!f) return;
+    if (fread(h, 1, 8, f) != 8 || memcmp(h, "BPK1", 4) || (P.n = le32(h + 4)) <= 0 || P.n > 100000) { fclose(f); P.n = 0; return; }
+    P.name = calloc(P.n, sizeof *P.name);
+    P.off = malloc(P.n * sizeof *P.off);
+    P.size = malloc(P.n * sizeof *P.size);
+    for (int i = 0; i < P.n; i++) {
+        if (fread(h, 1, 10, f) != 10) { P.n = i; break; }
+        int len = h[8] | h[9] << 8;
+        P.off[i] = le32(h);
+        P.size[i] = le32(h + 4);
+        P.name[i] = malloc(len + 1);
+        if (fread(P.name[i], 1, len, f) != (size_t)len) { free(P.name[i]); P.n = i; break; }
+        P.name[i][len] = 0;
+    }
+    P.f = f;
+}
+
+// PNG bytes for a path inside the Data dir, or NULL if there's no pack or it doesn't have the file.
+static uint8_t *pack_read(const char *path, long *len) {
+    size_t dl = strlen(R.data);
+    if (!P.tried && R.data[0]) pack_open();
+    if (!P.f || strncmp(path, R.data, dl) || path[dl] != '/') return NULL;
+    const char *rel = path + dl + 1;
+    int lo = 0, hi = P.n - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2, c = strcmp(P.name[mid], rel);
+        if (c < 0) lo = mid + 1;
+        else if (c > 0) hi = mid - 1;
+        else {
+            uint8_t *b = malloc(P.size[mid]);
+            if (b && !fseek(P.f, P.off[mid], SEEK_SET) && fread(b, 1, P.size[mid], P.f) == P.size[mid]) { *len = P.size[mid]; return b; }
+            free(b);
+            return NULL;
+        }
+    }
+    return NULL;
+}
+
 // Loads and scales an image to w*h, cached by path. Missing files are cached as NULL so each is reported once.
 // The returned pixels are only valid until the next call (a full cache is cleared).
 static const uint8_t *get_image(const char *path, int dw, int dh) {
@@ -73,7 +128,12 @@ static const uint8_t *get_image(const char *path, int dw, int dh) {
         i = hash(key) & (CACHE_SIZE - 1);
     }
     int w, h;
-    uint8_t *raw = png_load(path, &w, &h);
+    long plen;
+    uint8_t *packed = pack_read(path, &plen), *raw;
+    if (packed) {
+        raw = png_decode(packed, plen, &w, &h);
+        free(packed);
+    } else raw = png_load(path, &w, &h);
     if (!raw) printf("missing sprite %s\n", path);
     uint8_t *px = raw ? scale(raw, w, h, dw, dh) : NULL;
     free(raw);

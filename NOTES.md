@@ -70,6 +70,11 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - `.ld` is ini: `[general]` name/palette/music, `[specials]`, plus per-level object overrides (not yet handled → names may be wrong in levels that redefine objects).
 - Common sizes: 26x20, 30x18, 35x20, 26x16, 20x20. At 24px a 35x20 level is 840x480 → ~11px tiles on the 400x240 top screen, or scroll.
 
+## SD layout (tools/prepare_sd.py)
+- Data copied as-is except */Sprites/*.png, which go into Data/sprites.pak ("BPK1", u32 count,
+  count x (u32 off, u32 size, u16 len, name) sorted, then PNG bytes); render.c reads it, falls back to loose files.
+- 4376 sprites = ~1 MB of PNGs, but ~140 MB of SD space as separate files with 32 KB clusters.
+
 ## Assets
 - Sprites: `Sprites/<name>_<dir/frame>_<anim>.png`, 24x24 RGB, 3983 files. Recoloured at runtime from palette.
 - Palettes: `Palettes/*.png`, 7x5 grid; objects reference `colour = {x, y}`.
