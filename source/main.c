@@ -40,17 +40,27 @@ static void play_sound(const char *name) {
     sfx_play(path);
 }
 
-static char notice[160]; // startup timings and warnings, shown under the status
+static char notice[160];    // startup timings and warnings, shown under the status
+static char shown[2048];    // what the bottom screen shows now; cleared to force a redraw
 
 // Redraws the bottom screen when the shim's status text (level, rules, controls) or the notice changes.
 static void show_status(lua_State *L) {
-    static char last[2048] = "\x01";
     char text[2048];
     if (script_status(L, text, sizeof text)) return;
     snprintf(text + strlen(text), sizeof text - strlen(text), "\n\x1b[37;2m%s\x1b[0m", notice);
-    if (!strcmp(text, last)) return;
-    snprintf(last, sizeof last, "%s", text);
+    if (!strcmp(text, shown)) return;
+    snprintf(shown, sizeof shown, "%s", text);
     printf("\x1b[2J\x1b[H%s", text);
+}
+
+static const char *menu[] = {"Resume", "Restart level", "Return to map", "Quit game"};
+#define MENU_ITEMS 4
+
+static void show_menu(int sel) {
+    shown[0] = 0;
+    printf("\x1b[2J\x1b[H\x1b[33mPaused\x1b[0m\n\n");
+    for (int i = 0; i < MENU_ITEMS; i++) printf("%s %s\x1b[0m\n", i == sel ? "\x1b[33m>" : " ", menu[i]);
+    printf("\n\x1b[37;2mUp/Down choose   A select   B/START back\x1b[0m");
 }
 
 int main(void) {
@@ -66,7 +76,7 @@ int main(void) {
     u64 topen = osGetTime();
     int ok = L && !script_start(L);
     u64 t1 = osGetTime();
-    if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\n");
+    if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\nSTART to quit\n");
     else {
         script_draw(L, frame, 400, 240, 1);
         u64 t2 = osGetTime();
@@ -83,16 +93,34 @@ int main(void) {
     }
 
     hidSetRepeatParameters(15, 6);
-    int wobble = 1, vblanks = 0;
+    int wobble = 1, vblanks = 0, paused = 0, sel = 0;
     while (aptMainLoop()) {
         hidScanInput();
         u32 down = hidKeysDown(), rep = hidKeysDownRepeat();
-        if (down & KEY_START) break;
-        if (ok) {
-            // KEY_RIGHT etc. = D-pad or Circle Pad (Azahar maps the keyboard arrows to the Circle Pad)
-            const char *key = rep & KEY_RIGHT ? "right" : rep & KEY_UP ? "up" : rep & KEY_LEFT ? "left"
-                            : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : down & KEY_A ? "enter"
-                            : down & KEY_X ? "restart" : down & KEY_SELECT ? "leave" : NULL;
+        if (!ok) {
+            if (down & KEY_START) break;
+        } else {
+            const char *key = NULL;
+            if (paused) {
+                if (rep & KEY_UP) sel = (sel + MENU_ITEMS - 1) % MENU_ITEMS;
+                if (rep & KEY_DOWN) sel = (sel + 1) % MENU_ITEMS;
+                if (rep & (KEY_UP | KEY_DOWN)) show_menu(sel);
+                if (down & KEY_A) {
+                    if (sel == 3) break;
+                    key = sel == 1 ? "restart" : sel == 2 ? "leave" : NULL;
+                    paused = 0;
+                } else if (down & (KEY_B | KEY_START)) paused = 0;
+                if (!paused) show_status(L);
+            } else if (down & KEY_START) {
+                paused = 1;
+                sel = 0;
+                show_menu(sel);
+            } else {
+                // KEY_RIGHT etc. = D-pad or Circle Pad (Azahar maps the keyboard arrows to the Circle Pad)
+                key = rep & KEY_RIGHT ? "right" : rep & KEY_UP ? "up" : rep & KEY_LEFT ? "left"
+                    : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : down & KEY_A ? "enter"
+                    : down & KEY_X ? "restart" : down & KEY_SELECT ? "leave" : NULL;
+            }
             int redraw = 0;
             if (key) {
                 script_input(L, key);

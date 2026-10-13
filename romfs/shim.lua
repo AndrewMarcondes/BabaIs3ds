@@ -560,7 +560,7 @@ function engine.status()
 	end
 	while #out < 24 do out[#out + 1] = "" end
 	out[#out + 1] = grey .. "D-pad move   A wait/enter   B undo"
-	out[#out + 1] = "X restart   SELECT map   START quit" .. reset
+	out[#out + 1] = "X restart   SELECT map   START menu" .. reset
 	return table.concat(out, "\n")
 end
 

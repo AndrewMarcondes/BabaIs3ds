@@ -18,8 +18,9 @@ Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
    options → Dump DSP firmware). Azahar needs the same file in its `sdmc/3ds/` folder.
 
 ## Controls
-D-pad/Circle Pad move, B undo, A wait (in a level) / enter level (on the map), X restart, SELECT back to map, START quit.
-In Azahar (default keys): arrows move, S undo, A wait/enter, Z restart, N back to map, M quit.
+D-pad/Circle Pad move, B undo, A wait (in a level) / enter level (on the map), X restart, SELECT back to map,
+START pause menu (resume, restart, return to map, quit).
+In Azahar (default keys): arrows move, S undo, A wait/enter, Z restart, N back to map, M menu.
 Progress is saved to `sdmc:/3ds/baba/save.ini`.
 
 ## Host tests (Mac/Linux, need zlib)
