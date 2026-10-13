@@ -48,7 +48,8 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   COMPLETED < -1 gate objects) is skipped: a met gate path is just saved open. Verify against the real game when possible.
 - Orbs: MF_bonus(1/0) while playing; on win counted once per level in save `<world>_bonus` (<level>=1, total).
 - Endings: MF_end / MF_allisdone save `<world> end/done = 1` (read back by the scripts), then finish like a win. No cutscenes/credits.
-- Unlock animation.
+- Feel: moves slide over ~80ms (engine.prev + drawlist(progress)); a win holds ~1s (5 ticks) before going up.
+- Not done: unlock/gate animations, particles, win animation, intro/ending cutscenes.
 - Music: .ld music= track from Worlds/<w>/Music or Data/Music, streamed by source/audio.c (tremor + ndsp).
   Empty music= defaults to map/baba (a guess).
 - Sound effects live in Contents/Resources/Assets.dat (Chowdren pack; header = (u32 offset, u32 size) per asset,

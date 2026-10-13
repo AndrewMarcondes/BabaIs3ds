@@ -43,9 +43,12 @@ print("move/undo/push/restart ok")
 
 -- win -> map
 for i = 1, 30 do
-	if generaldata.strings[CURRLEVEL] ~= "0level" then break end
+	if engine.won then break end
 	engine.input("right")
 end
+assert(engine.won and generaldata.strings[CURRLEVEL] == "0level", "touching the flag should win and stay on the level for a moment")
+engine.input("left")
+for i = 1, 5 do engine.tick() end -- the win pause
 assert(generaldata.strings[CURRLEVEL] == "106level", "win should return to the map, at " .. generaldata.strings[CURRLEVEL])
 assert(engine.ismap(), "106level should be a map")
 assert(engine.music == "map", "the map should play the map theme, got " .. tostring(engine.music))

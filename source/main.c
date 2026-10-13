@@ -139,7 +139,10 @@ int main(void) {
             if (++vblanks >= 12) { // ~5 per second, like the original's sprite wobble
                 vblanks = 0;
                 wobble = wobble % 3 + 1;
-                script_tick(L);
+                script_tick(L); // can change level (leaving after a win)
+                show_status(L);
+                update_music(L);
+                script_sounds(L, play_sound);
                 redraw = 1;
             }
             if (redraw) {

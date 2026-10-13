@@ -308,7 +308,7 @@ end
 -- level: { w, h, layers = { { tiles = {...}, dirs = {...} }, ... } }, tiles 0-based row-major, ids = tile[1] + tile[2]*256
 function engine.loadlevel(level)
 	engine.current = level
-	engine.won, engine.bonus, engine.finished = false, false, nil
+	engine.won, engine.bonus, engine.finished, engine.wintimer = false, false, nil, 0
 	init(1, level.w, level.h, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
 	generaldata2.values[ZOOM] = 1
 	spritedata.values[TILEMULT] = 1
@@ -545,16 +545,24 @@ function engine.input(key)
 			sublevel(l.strings[U_LEVELFILE], l.values[VISUALLEVEL], l.values[VISUALSTYLE])
 			engine.gotolevel(l.strings[U_LEVELFILE])
 		end
-	elseif engine.won then
-		local done = engine.finished or ("Cleared: " .. engine.message)
-		if goup() then engine.message = done .. "\n" .. engine.message end
 	end
+end
+
+-- After a win the level stays on screen for ~1s (5 ticks) before going back up to the map.
+local WIN_TICKS = 5
+local function leavewon()
+	engine.wintimer = (engine.wintimer or 0) + 1
+	if engine.wintimer < WIN_TICKS then return end
+	engine.wintimer = 0
+	local done = engine.finished or ("Cleared: " .. engine.message)
+	if goup() then engine.message = done .. "\n" .. engine.message end
 end
 
 -- Animation timer (the original engine calls animate() on a timer too): cycles animated objects (tiling 3/4).
 -- shortcut: animate() also re-derives walk frames, which only change on turns; fine since it is idempotent for them
 function engine.tick()
 	animate()
+	if engine.won then leavewon() end
 end
 
 ---------------------------------------------------------------- bottom screen
