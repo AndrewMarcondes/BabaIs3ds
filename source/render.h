@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 // Software renderer into an RGB8 row-major buffer (fbw x fbh). One level at a time.
-// data = game Data dir, world = e.g. "baba", palette = file in Data/Palettes. 0 on success.
+// data = game Data dir, world = e.g. "baba", palette = path inside data, e.g. "Palettes/default.png". 0 on success.
 int render_begin_level(const char *data, const char *world, const char *palette, int roomw, int roomh, int fbw, int fbh);
 void render_end_level(void);
 void render_clear(uint8_t *fb);

@@ -34,9 +34,18 @@ The game data still goes on the SD card as below, for the .cia and the .3dsx ali
 3. For music and sound, the console's DSP firmware must be at `sdmc:/3ds/dspfirm.cdc` (Luma3DS: Rosalina menu →
    Miscellaneous options → Dump DSP firmware). Azahar needs the same file in its `sdmc/3ds/` folder.
 
+## Level packs and mods
+The title screen has **Start game** (the main game), **Level packs & mods** and **Exit**.
+- Every folder in `Data/Worlds` with a `world_data.txt` is a level pack. Your copy of the game already has
+  *New Adventures* and the *Museum*.
+- Mods use the PC game's own format: a pack's `Lua/*.lua` files are loaded when it's played, and
+  `Data/Lua/*.lua` mods always. A pack can bring its own `Sprites/`, `Music/` and `Palettes/` too.
+- To add a community pack or mod made for the PC version, copy its folder into `sdmc:/3ds/baba/Data/Worlds/`
+  (and re-run `prepare_sd.py` if you keep packs on your Mac, so its sprites get packed).
+
 ## Controls
 D-pad/Circle Pad move, B undo, A wait (in a level) / enter level (on the map), X restart, SELECT back to map,
-START pause menu (resume, restart, return to map, quit).
+START pause menu (resume, restart, return to map, title screen, quit).
 In Azahar (default keys): arrows move, S undo, A wait/enter, Z restart, N back to map, M menu.
 Progress is saved to `sdmc:/3ds/baba/save.ini`.
 

@@ -1,5 +1,5 @@
-"""Draws the original home-menu art for the .cia: meta/icon.png (48x48), meta/banner.png (256x128) and
-meta/banner.wav (a short chime). No game assets are used, so these can be committed and shared.
+"""Draws the original art: meta/icon.png (48x48), meta/banner.png (256x128) and meta/banner.wav (a short chime)
+for the .cia, and romfs/title.png (400x240) for the title screen. No game assets are used, so these can be committed and shared.
 
 usage: python3 tools/make_art.py
 """
@@ -73,6 +73,19 @@ def banner():
     return img
 
 
+def title():
+    img = canvas(400, 240, BG)
+    for x in range(0, 400, 20): # faint grid, like a level floor
+        rect(img, x, 0, 1, 240, EDGE)
+    for y in range(0, 240, 20):
+        rect(img, 0, y, 400, 1, EDGE)
+    tile(img, 60, 50, 280, 72, PINK)
+    text(img, "BABA", 108, 58, 8, WHITE)  # 4 x 40px letters + 3 x 8px gaps = 184px, centred on 200
+    tile(img, 120, 138, 160, 52, YELLOW)
+    text(img, "3DS", 149, 143, 6, DARK)  # 3 x 30px + 2 x 6px = 102px
+    return img
+
+
 def chime(path, rate=32000):
     # two soft notes (E5 then A5), well under the 3s banner sound limit
     out = []
@@ -97,4 +110,5 @@ if __name__ == "__main__":
     png(os.path.join(meta, "icon.png"), icon())
     png(os.path.join(meta, "banner.png"), banner())
     chime(os.path.join(meta, "banner.wav"))
-    print("wrote meta/icon.png, meta/banner.png, meta/banner.wav")
+    png(os.path.join(meta, "..", "romfs", "title.png"), title())
+    print("wrote meta/icon.png, meta/banner.png, meta/banner.wav, romfs/title.png")

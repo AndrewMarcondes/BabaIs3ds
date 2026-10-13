@@ -10,8 +10,9 @@ lua_State *script_open(const char *data, const char *shim_path, const char *save
 // Calls the function below nargs args on the stack, with traceback on error. 0 on success (nresults left on stack).
 int script_call(lua_State *L, int nargs, int nresults);
 
-// Starts the game: the level the save says comes first (level 1, or the map once it's won).
-int script_start(lua_State *L);
+// Starts a level pack (folder in Data/Worlds, "baba" = the main game) at the level its save says comes first,
+// loading its Lua mods. Use a fresh lua_State per pack: mods change the game's functions.
+int script_start(lua_State *L, const char *world);
 
 // One turn of input: right/up/left/down/idle/undo/restart, or "enter"/"leave" for the map.
 int script_input(lua_State *L, const char *key);

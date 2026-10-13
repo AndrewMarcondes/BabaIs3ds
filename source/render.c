@@ -172,7 +172,7 @@ int render_begin_level(const char *data, const char *world, const char *palette,
     char path[512];
     snprintf(R.data, sizeof R.data, "%s", data);
     snprintf(R.world, sizeof R.world, "%s", world);
-    snprintf(path, sizeof path, "%s/Palettes/%s", data, palette);
+    snprintf(path, sizeof path, "%s/%s", data, palette);
     if (!(R.pal = png_load(path, &R.pw, &R.ph))) return -1;
     // Outer ring of the room is the invisible edge; only the inside is shown.
     R.fbw = fbw;

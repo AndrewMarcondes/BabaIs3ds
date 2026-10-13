@@ -90,9 +90,27 @@ static int l_readlevel(lua_State *L) {
     return 1;
 }
 
+// engine_listdir(path) -> { names } (no hidden files), or nil if the folder can't be opened. For MF_filelist.
+static int l_listdir(lua_State *L) {
+    DIR *d = opendir(luaL_checkstring(L, 1));
+    if (!d) { lua_pushnil(L); return 1; }
+    lua_newtable(L);
+    int n = 0;
+    struct dirent *e;
+    while ((e = readdir(d)))
+        if (e->d_name[0] != '.') { lua_pushstring(L, e->d_name); lua_rawseti(L, -2, ++n); }
+    closedir(d);
+    return 1;
+}
+
+// Level count the renderer was last set up for; reset by script_open since a new Lua state counts from scratch.
+static int view_serial = -1;
+
 lua_State *script_open(const char *data, const char *shim_path, const char *savefile) {
+    view_serial = -1;
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
+    lua_register(L, "engine_listdir", l_listdir);
     lua_register(L, "engine_readlevel", l_readlevel);
     // constants/values first: other files use their globals at load time
     const char *first[] = {"constants.lua", "values.lua"};
@@ -130,7 +148,11 @@ static int engine_call(lua_State *L, const char *fn, const char *arg) {
     return script_call(L, arg ? 1 : 0, 0);
 }
 
-int script_start(lua_State *L) {
+int script_start(lua_State *L, const char *world) {
+    lua_getglobal(L, "engine");
+    lua_pushstring(L, world);
+    lua_setfield(L, -2, "world");
+    lua_pop(L, 1);
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "boot");
     lua_remove(L, -2);
@@ -158,13 +180,12 @@ static Item items[4096];
 static int nitems;
 
 void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
-    static int serial = -1;
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "levelserial");
     int now = lua_tointeger(L, -1);
     lua_pop(L, 2);
-    if (now != serial) {
-        serial = now;
+    if (now != view_serial) {
+        view_serial = now;
         lua_getglobal(L, "engine");
         lua_getfield(L, -1, "roomw");
         lua_getfield(L, -2, "roomh");
@@ -172,8 +193,8 @@ void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
         lua_pop(L, 3);
         if (render_begin_level(script_string(L, "data"), script_string(L, "world"), script_string(L, "palette"), w, h, fbw, fbh)) {
             printf("cannot load palette %s, using default\n", script_string(L, "palette"));
-            if (render_begin_level(script_string(L, "data"), script_string(L, "world"), "default.png", w, h, fbw, fbh)) {
-                serial = -1; // try again next time; nothing can be drawn without a palette
+            if (render_begin_level(script_string(L, "data"), script_string(L, "world"), "Palettes/default.png", w, h, fbw, fbh)) {
+                view_serial = -1; // try again next time; nothing can be drawn without a palette
                 nitems = 0;
                 return;
             }

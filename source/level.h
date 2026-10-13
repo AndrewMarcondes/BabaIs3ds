@@ -19,6 +19,3 @@ typedef struct {
 // Returns 0 on success. Format notes in NOTES.md.
 int level_load(const char *path, Level *out);
 void level_free(Level *lv);
-
-// Reads palette= from a level's .ld file into out (default.png if absent). -1 if the file can't be opened.
-int level_palette(const char *ld_path, char *out, int outlen);

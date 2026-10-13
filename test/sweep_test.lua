@@ -1,5 +1,5 @@
 -- Loads every level of the baba world through the shim and plays a few turns; reports Lua errors.
-local dir = engine.data .. "/Worlds/baba"
+local dir = engine.data .. "/Worlds/" .. engine.world
 local p = io.popen('ls "' .. dir .. '"')
 local names = {}
 for f in p:lines() do

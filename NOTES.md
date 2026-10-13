@@ -94,3 +94,12 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Turn cost is ~90% the game's own Lua (hasfeature, dynamictile). Levels with dozens of YOU units are heavy.
 - Startup after all fixes: ~1.3s scripts + ~0.8s level (was ~27s).
 - Animation must follow the clock (osGetTime), not loop passes: hardware frames take ~22ms.
+
+## Level packs / mods
+- engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.
+  setupmods_global() (Data/Lua) and, for packs, setupmods_levelpack() (Worlds/<pack>/Lua) - the game's own
+  loaders; shim provides MF_filelist (via engine_listdir) and maps "Data/..." paths in dofile.
+- One Lua state per pack (mods replace game functions): C reopens Lua for the title screen / pack switch.
+- paletteroot=0 in a .ld = palette from Worlds/<pack>/Palettes.
+- Verified: new_adv 192/192 and museum 115/115 levels load, play and render (sweep + render_test BABA_WORLD=).
+  Worlds/debug (developer test pack) has a Lua mod that loads fine but its firstlevel is missing; hidden.

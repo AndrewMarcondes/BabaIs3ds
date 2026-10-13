@@ -159,6 +159,27 @@ function MF_setfile(storage, path) end -- files are chosen by the engine (gotole
 
 local function savenum(group, key) return tonumber(MF_read("save", group, key)) or 0 end
 
+---------------------------------------------------------------- files (mods)
+
+-- The game names files relative to the PC install ("Data/Lua/x.lua"); ours live under engine.data.
+local function datapath(p)
+	if type(p) == "string" and p:sub(1, 5) == "Data/" then return engine.data .. p:sub(5) end
+	return p
+end
+
+local _dofile = dofile
+function dofile(p) return _dofile(datapath(p)) end
+
+-- MF_filelist("Data/Lua/", "*.lua") -> file names in that folder matching the pattern ("*.*" = all)
+function MF_filelist(path, pattern)
+	local ext = (pattern or "*.*"):match("^%*(%..*)$")
+	local t = {}
+	for _, name in ipairs(engine_listdir(datapath(path)) or {}) do
+		if ext == ".*" or (ext and name:sub(-#ext) == ext) then t[#t + 1] = name end
+	end
+	return t
+end
+
 ---------------------------------------------------------------- sound
 
 -- Sounds to play this frame, by file name in Data/Sounds (taken by C after each input via engine.takesounds).
@@ -489,7 +510,9 @@ function engine.gotolevel(name)
 	engine.ini.level = engine.readini(base .. ".ld")
 	local g = engine.ini.level.general or {}
 	engine.world = generaldata.strings[WORLD]
-	engine.palette = (g.palette or "") ~= "" and g.palette or "default.png"
+	-- paletteroot=0: the pack brings its own palette in Worlds/<pack>/Palettes
+	local pal = (g.palette or "") ~= "" and g.palette or "default.png"
+	engine.palette = (g.paletteroot == "0" and ("Worlds/" .. engine.world .. "/Palettes/") or "Palettes/") .. pal
 	-- shortcut: the default for an empty music= (map theme on maps, main theme in levels) is a guess at the original
 	engine.leveltrack = (g.music or "") ~= "" and g.music or (g.leveltype == "1" and "map" or "baba")
 	engine.music = engine.leveltrack
@@ -516,12 +539,16 @@ function engine.boot()
 end
 
 function engine.boot_()
+	local world = engine.world or "baba"
 	init(1, 1, 1, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
 	setupmenu(10, 11, 12, 13, 14, 15, true) -- editor objects; map code reads editor.values
-	generaldata.strings[WORLD] = "baba"
-	generaldata.strings[BASEWORLD] = "baba"
+	generaldata.strings[WORLD] = world
+	generaldata.strings[BASEWORLD] = "baba" -- the main game; endings/intro behave differently in other packs
 	generaldata.strings[CURRLEVEL] = ""
-	engine.ini.world = engine.readini(engine.data .. "/Worlds/baba/world_data.txt")
+	engine.ini.world = engine.readini(engine.data .. "/Worlds/" .. world .. "/world_data.txt")
+	-- mods, the way the original loads them: Data/Lua/*.lua always, Worlds/<pack>/Lua/*.lua for that pack
+	setupmods_global()
+	if world ~= "baba" then setupmods_levelpack() end
 	engine.ini.save = engine.savefile and engine.loadsave() or {}
 	firstlevel()
 	-- shortcut: the real engine restores the level tree from the save; we only know the start map

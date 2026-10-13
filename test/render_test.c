@@ -7,7 +7,8 @@
 int main(int argc, char **argv) {
     if (argc < 3) { fprintf(stderr, "usage: %s <Data dir> <out.ppm> [save.ini] [keys, =level, ~progress...]\n", argv[0]); return 2; }
     lua_State *L = script_open(argv[1], "romfs/shim.lua", argc > 3 ? argv[3] : "build-host/render_save.ini");
-    if (!L || script_start(L)) return 1;
+    const char *world = getenv("BABA_WORLD"); // pack to start, default the main game
+    if (!L || script_start(L, world ? world : "baba")) return 1;
     float progress = 1;
     for (int i = 4; i < argc; i++) {
         if (argv[i][0] == '~') { progress = atof(argv[i] + 1); continue; } // "~0.5": draw halfway through the last move
