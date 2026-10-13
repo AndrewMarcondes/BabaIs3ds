@@ -67,6 +67,7 @@ static void show_menu(int sel) {
 }
 
 int main(void) {
+    osSetSpeedupEnable(true); // New 3DS: 804MHz + L2 cache instead of 268MHz (homebrew must ask); no-op on old models
     gfxInitDefault();
     gfxSetDoubleBuffering(GFX_TOP, false);
     consoleInit(GFX_BOTTOM, NULL);
