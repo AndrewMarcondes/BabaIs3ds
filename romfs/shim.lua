@@ -1,7 +1,7 @@
 -- Engine side of the Lua boundary (what Chowdren/Fusion provided). Game objects are plain tables.
 -- MF_* behaviour follows Data/MF_documentation.txt from the game.
 
-engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {} }
+engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {}, blocked = {} }
 
 local SYSTEM_IDS = 100 -- ids below this are engine/system objects (generaldata etc.) and survive level changes
 local VARS_ID = 9      -- scratch object handed to mapcursor_enter
@@ -149,7 +149,20 @@ function MF_emptycreate(class, x, y)
 end
 
 function MF_create(class)
-	return MF_emptycreate(class, 0, 0)
+	local id = MF_emptycreate(class, 0, 0)
+	if class == "Ingame_blocked" then engine.blocked[id] = true end -- the X over text of a disabled rule
+	return id
+end
+
+-- Removes the X for one rule word (its unit id is in the X's TYPE), or all of them for 0.
+function MF_removeblockeffect(textid)
+	for id in pairs(engine.blocked) do
+		local o = engine.objects[id]
+		if textid == 0 or not o or o.values[TYPE] == textid then
+			engine.blocked[id] = nil
+			engine.objects[id] = nil
+		end
+	end
 end
 
 -- shortcut: effects/particles are created but never drawn; render them when visuals matter
@@ -304,7 +317,7 @@ function engine.loadlevel(level)
 	for id in pairs(engine.objects) do
 		if id >= SYSTEM_IDS then engine.objects[id] = nil end
 	end
-	engine.edge = {}
+	engine.edge, engine.blocked = {}, {}
 
 	-- per-level object overrides from .ld [tiles] changed=objectNNN,...; addunit then applies them via dochanges
 	local tiles = engine.ini.level and engine.ini.level.tiles or {}
@@ -587,7 +600,7 @@ end
 
 ---------------------------------------------------------------- drawing
 
--- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile,
+-- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile, "#cross" = X,
 -- "@file" = exact sprite file; part 1/2 = left/right half of the tile.
 function engine.drawlist()
 	local list = {}
@@ -655,6 +668,11 @@ function engine.drawlist()
 			add(ch.image or t.sprite or u.className, root, frame,
 				u.values[XPOS], u.values[YPOS], c[1], c[2], u.values[ZLAYER])
 		end
+	end
+	for id in pairs(engine.blocked) do
+		local o = engine.objects[id]
+		local c = o and o.colour or { 2, 2 }
+		if o and o.visible then add("#cross", true, 0, o.values[XPOS], o.values[YPOS], c[1], c[2], 20) end
 	end
 	-- stable by layer, then insertion order
 	for i, e in ipairs(list) do e.order = i end

@@ -132,8 +132,16 @@ void render_clear(uint8_t *fb) {
 
 void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int part, int x, int y, int c1, int c2) {
     if (x < 1 || y < 1 || x > R.vw || y > R.vh) return;
-    if (sprite[0] == '#') { // "#box": solid tile with a 1px gap, for level icons the engine draws itself
+    if (!strcmp(sprite, "#box")) { // solid tile with a 1px gap, for level icons the engine draws itself
         fill(fb, R.ox + (x - 1) * R.ts + 1, R.oy + (y - 1) * R.ts + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
+        return;
+    }
+    if (!strcmp(sprite, "#cross")) { // 2px X over the text of a disabled rule
+        int px = R.ox + (x - 1) * R.ts, py = R.oy + (y - 1) * R.ts;
+        for (int i = 1; i < R.ts - 1; i++) {
+            fill(fb, px + i, py + i, 2 - (i == R.ts - 2), 1, PAL(c1, c2));
+            fill(fb, px + R.ts - 1 - i - (i < R.ts - 2), py + i, 2 - (i == R.ts - 2), 1, PAL(c1, c2));
+        }
         return;
     }
     char path[512];
