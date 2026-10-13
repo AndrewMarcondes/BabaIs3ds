@@ -43,9 +43,11 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 
 ## Next
 - Gates/map clears are reconstructed (engine.mapprogress), not taken from the original: path `gate` 1 level clears
-  (`<world>_prize total`), 2 map clears (`<world>_clears total`), 3 orbs (`<world>_bonus total`, not counted yet), 4 clears on
+  (`<world>_prize total`), 2 map clears (`<world>_clears total`), 3 orbs (`<world>_bonus total`), 4 clears on
   this map; a map is cleared at `unlockcount` cleared levels. The original's gate animation (gateunlock, MF_findgates,
   COMPLETED < -1 gate objects) is skipped: a met gate path is just saved open. Verify against the real game when possible.
+- Orbs: MF_bonus(1/0) while playing; on win counted once per level in save `<world>_bonus` (<level>=1, total).
+- Endings: MF_end / MF_allisdone save `<world> end/done = 1` (read back by the scripts), then finish like a win. No cutscenes/credits.
 - Unlock animation.
 - Music: .ld music= track from Worlds/<w>/Music or Data/Music, streamed by source/audio.c (tremor + ndsp).
   Empty music= defaults to map/baba (a guess).

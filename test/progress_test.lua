@@ -33,3 +33,27 @@ assert(MF_read("save", "baba_clears", "total") == "6", "map clear total should g
 assert(engine.gotolevel("177level"))
 assert(MF_read("save", "baba_clears", "total") == "6", "reloading a cleared map must not count it twice")
 print("map clears ok")
+
+-- orbs: a won level with its bonus collected counts once, and opens orb gates (type 3)
+generaldata.strings[CURRLEVEL] = "orbtest"
+engine.won = false
+MF_bonus(1)
+MF_win()
+assert(MF_read("save", "baba_bonus", "total") == "1", "collected bonus should count an orb")
+engine.won, engine.bonus = false, false
+MF_bonus(1)
+MF_win()
+assert(MF_read("save", "baba_bonus", "total") == "1", "the same level's bonus must not count twice")
+engine.won = false
+MF_bonus(1) MF_bonus(0) -- picked up then undone
+generaldata.strings[CURRLEVEL] = "orbtest2"
+MF_win()
+assert(MF_read("save", "baba_bonus", "total") == "1", "an undone bonus must not count")
+print("orbs ok")
+
+-- endings record the flags the scripts read back
+engine.won = false
+generaldata.strings[CURRLEVEL] = "endtest"
+MF_end()
+assert(MF_read("save", "baba", "end") == "1" and engine.finished == "The End", "MF_end should save end=1")
+print("endings ok")

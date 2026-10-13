@@ -295,7 +295,7 @@ end
 -- level: { w, h, layers = { { tiles = {...}, dirs = {...} }, ... } }, tiles 0-based row-major, ids = tile[1] + tile[2]*256
 function engine.loadlevel(level)
 	engine.current = level
-	engine.won = false
+	engine.won, engine.bonus, engine.finished = false, false, nil
 	init(1, level.w, level.h, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
 	generaldata2.values[ZOOM] = 1
 	spritedata.values[TILEMULT] = 1
@@ -457,16 +457,37 @@ end
 
 -- block() calls this when a YOU unit is on a WIN unit.
 -- shortcut: no win animation/sound; we save, then go up to the map at the end of the turn
--- shortcut: bonus/orbs (MF_bonus, the "<world>_bonus" total) are not counted, so orb gates stay shut
+-- The game calls this when YOU touches BONUS (and with 0 when that's undone); it counts once the level is won.
+function MF_bonus(status) engine.bonus = status == 1 end
+
 function MF_win()
+	if engine.won then return end -- several win paths can fire in one turn
 	local world, level = generaldata.strings[WORLD], generaldata.strings[CURRLEVEL]
 	if savenum(world, level) < 3 then
 		MF_store("save", world .. "_prize", "total", savenum(world .. "_prize", "total") + 1)
+	end
+	if engine.bonus and savenum(world .. "_bonus", level) == 0 then
+		MF_store("save", world .. "_bonus", level, 1)
+		MF_store("save", world .. "_bonus", "total", savenum(world .. "_bonus", "total") + 1)
 	end
 	MF_store("save", world, level, 3)
 	MF_playsound("winner2")
 	engine.won = true
 end
+
+-- Endings: the original plays a cutscene and credits. We record what the scripts read back later
+-- (save "end"/"done" flags unlock post-game content), then finish like a win with a message.
+-- shortcut: no ending cutscenes or credits
+local function finish(flag, text)
+	MF_store("save", generaldata.strings[WORLD], flag, 1)
+	MF_win()
+	engine.finished = text
+end
+function MF_end() finish("end", "The End") end
+function MF_end_single() MF_store("save", generaldata.strings[WORLD], "end", 1) end
+function MF_allisdone() finish("done", "All is done") end
+function MF_done_single() MF_store("save", generaldata.strings[WORLD], "done", 1) end
+function MF_credits() end
 
 local function goup()
 	if #leveltree <= 1 or not levelexists(leveltree[#leveltree - 1]) then return false end
@@ -510,8 +531,8 @@ function engine.input(key)
 			engine.gotolevel(l.strings[U_LEVELFILE])
 		end
 	elseif engine.won then
-		local done = engine.message
-		if goup() then engine.message = "Cleared: " .. done .. "\n" .. engine.message end
+		local done = engine.finished or ("Cleared: " .. engine.message)
+		if goup() then engine.message = done .. "\n" .. engine.message end
 	end
 end
 
