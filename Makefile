@@ -40,6 +40,10 @@ GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs
 #GFXBUILD	:=	$(ROMFS)/gfx
+APP_TITLE	:=	baba3ds
+APP_DESCRIPTION	:=	Baba Is You on 3DS (uses your own game files)
+APP_AUTHOR	:=	baba3ds
+ICON		:=	meta/icon.png
 
 #---------------------------------------------------------------------------------
 # options for code generation

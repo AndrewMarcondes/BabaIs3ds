@@ -7,6 +7,17 @@ Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
 
     make
 
+## Installable .cia (HOME Menu icon)
+Needs [makerom](https://github.com/3DSGuy/Project_CTR/releases) and
+[bannertool](https://github.com/diasurgical/bannertool) (no macOS release: compile `source/*.cpp source/pc/*.c
+source/3ds/*.cpp` with clang++). Then:
+
+    MAKEROM=/path/to/makerom BANNERTOOL=/path/to/bannertool tools/make_cia.sh
+
+Copy `baba3ds.cia` to the SD card and install it with FBI. The icon, banner and chime are original
+(`tools/make_art.py` draws them into `meta/`); the package settings are in `meta/cia.rsf`.
+The game data still goes on the SD card as below, for the .cia and the .3dsx alike.
+
 ## Run
 1. Prepare the game data from your own copy (Python 3, no extra packages). With the SD card mounted:
 
