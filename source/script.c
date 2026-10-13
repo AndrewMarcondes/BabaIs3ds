@@ -90,19 +90,9 @@ static int l_readlevel(lua_State *L) {
     return 1;
 }
 
-// TEMP profiling: engine_ms() -> milliseconds, for timing startup steps on hardware
-#ifdef __3DS__
-#include <3ds.h>
-static int l_ms(lua_State *L) { lua_pushinteger(L, (lua_Integer)osGetTime()); return 1; }
-#else
-#include <time.h>
-static int l_ms(lua_State *L) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); lua_pushinteger(L, t.tv_sec * 1000 + t.tv_nsec / 1000000); return 1; }
-#endif
-
 lua_State *script_open(const char *data, const char *shim_path, const char *savefile) {
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
-    lua_register(L, "engine_ms", l_ms);
     lua_register(L, "engine_readlevel", l_readlevel);
     // constants/values first: other files use their globals at load time
     const char *first[] = {"constants.lua", "values.lua"};

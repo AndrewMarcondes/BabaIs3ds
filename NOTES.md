@@ -84,3 +84,13 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 1. 3DS skeleton (devkitARM + libctru + citro2d) with Lua 5.3.4 embedded, reading `Data/` from SD card (`sdmc:/3ds/baba/Data`).
 2. Render a level natively from the parsed `.l` + sprites + palette, no Lua yet (proves the asset path).
 3. Implement `mmf.newObject` + the most-called `MF_*` as stubs that log, run `load.lua`/`rules.lua`, iterate until the first level plays.
+
+## Real hardware (New 3DS, measured 2026-10-13)
+- Emulator (Azahar) timing is not representative for SD access: on hardware each file open is ~140ms in big
+  folders, and closing a newly created/truncated file took 5.4s (allocation). Keep SD work rare:
+  one read per file (no line-by-line IO), level names from Data/levelnames.ini, saves rewritten in place.
+- Saves: two fixed-size slots (save.ini.a/.b) rewritten in place: ~20ms vs 5.4s; first creation of a slot is slow once.
+- osSetSpeedupEnable(true): New 3DS 804MHz mode, ~2x on script loading. Lua is ~200x slower than a Mac.
+- Turn cost is ~90% the game's own Lua (hasfeature, dynamictile). Levels with dozens of YOU units are heavy.
+- Startup after all fixes: ~1.3s scripts + ~0.8s level (was ~27s).
+- Animation must follow the clock (osGetTime), not loop passes: hardware frames take ~22ms.

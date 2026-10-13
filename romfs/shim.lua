@@ -117,14 +117,11 @@ local function writesave(t)
 	local gen = (engine.savegen or 0) + 1
 	local data = "#gen=" .. gen .. "\n" .. text .. "#end\n"
 	local path = slotpath(gen)
-	local ms, created = engine_ms or function() return 0 end, false -- TEMP: save timing on hardware
-	local t0 = ms()
 	local f = io.open(path, "r+b")
 	local size = f and f:seek("end") or 0
 	if size < #data then -- first save, or the save outgrew its slot: allocating is slow, so leave room to grow
 		if f then f:close() end
 		size = math.max(SLOT_MIN, #data * 2)
-		created = true
 		f = io.open(path, "wb")
 		if not f then return end
 	end
@@ -132,7 +129,6 @@ local function writesave(t)
 	f:seek("set", 0)
 	f:write(data, string.rep(" ", size - #data))
 	if f:close() then engine.savegen, engine.saved = gen, text end
-	engine.saveprofile = ("save %s %s: %dms"):format(path:match("%.%a$"), created and "created" or "in place", ms() - t0) -- TEMP
 end
 
 -- Saves are written at most once per turn (engine.flushsave), not on every MF_store.
@@ -512,49 +508,13 @@ function engine.gotolevel(name)
 	return true
 end
 
--- TEMP profiling: time the startup steps and keep the slowest in engine.profile for the bottom screen
-local function profile(fn)
-	local spent, wrapped = {}, {}
-	local function wrap(t, k, label)
-		local f = t[k]
-		if type(f) ~= "function" then return end
-		wrapped[#wrapped + 1] = { t, k, f }
-		t[k] = function(...)
-			local t0 = engine_ms()
-			local r = table.pack(f(...))
-			spent[label] = (spent[label] or 0) + engine_ms() - t0
-			return table.unpack(r, 1, r.n)
-		end
-	end
-	for _, k in ipairs({ "init", "setupmenu", "firstlevel", "sublevel", "engine_readlevel", "clearunits", "addchange",
-		"addunit", "addpath", "addspecial", "loadlevelcompletion", "dynamictiling", "updatecolours", "startblock",
-		"animate", "openlevels", "mapcursor_load", "MF_store", "MF_read", "code", "restoredefaults", "newundo",
-		"setupnounlists", "generatetiles", "formatobjlist", "generatefreqs", "collectgarbage", "print" }) do wrap(_G, k, k) end
-	wrap(engine, "readini", "readini")
-	wrap(engine, "loadlevel", "loadlevel(total)")
-	wrap(io, "open", "io.open")
-	wrap(os, "rename", "os.rename")
-	wrap(os, "remove", "os.remove")
-	local t0 = engine_ms()
-	local r = fn()
-	local total = engine_ms() - t0
-	for _, w in ipairs(wrapped) do w[1][w[2]] = w[3] end
-	local keys = {}
-	for k in pairs(spent) do keys[#keys + 1] = k end
-	table.sort(keys, function(a, b) return spent[a] > spent[b] end)
-	local out = { "start " .. total .. "ms:" }
-	for i = 1, math.min(8, #keys) do out[#out + 1] = keys[i] .. " " .. spent[keys[i]] end
-	engine.profile = table.concat(out, ", ")
-	return r
-end
-
 -- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
 function engine.boot()
-	local r
-	if engine_ms then r = profile(engine.boot_) else r = engine.boot_() end
+	local r = engine.boot_()
 	engine.flushsave()
 	return r
 end
+
 function engine.boot_()
 	init(1, 1, 1, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
 	setupmenu(10, 11, 12, 13, 14, 15, true) -- editor objects; map code reads editor.values
@@ -724,7 +684,6 @@ function engine.status()
 		if engine.won then out[#out + 1] = "" out[#out + 1] = yellow .. "Congratulations!" .. reset end
 	end
 	while #out < 24 do out[#out + 1] = "" end
-	if engine.saveprofile then out[#out] = grey .. engine.saveprofile .. reset end -- TEMP
 	out[#out + 1] = grey .. "D-pad move   A wait/enter   B undo"
 	out[#out + 1] = "X restart   SELECT map   START menu" .. reset
 	return table.concat(out, "\n")

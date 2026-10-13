@@ -43,7 +43,7 @@ static void play_sound(const char *name) {
     sfx_play(path);
 }
 
-static char notice[400];    // startup timings and warnings, shown under the status
+static char notice[160];    // startup timings and warnings, shown under the status
 static char shown[2048];    // what the bottom screen shows now; cleared to force a redraw
 
 // Redraws the bottom screen when the shim's status text (level, rules, controls) or the notice changes.
@@ -92,8 +92,6 @@ int main(void) {
         if (f) fclose(f);
         if (!audio) snprintf(notice + n, sizeof notice - n, "no audio: needs sdmc:/3ds/dspfirm.cdc");
         else if (!f) snprintf(notice + n, sizeof notice - n, "no sound effects: see README");
-        snprintf(notice + strlen(notice), sizeof notice - strlen(notice), "\n%s\n%s", script_string(L, "profile"),
-                 script_string(L, "saveprofile")); // TEMP
         show_status(L);
         update_music(L);
     }
