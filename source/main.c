@@ -136,7 +136,7 @@ int main(void) {
                 slide++;
                 redraw = 1;
             }
-            if (++vblanks >= 12) { // ~5 per second, like the original's sprite wobble
+            if (!paused && ++vblanks >= 12) { // ~5 per second, like the original's sprite wobble; frozen while paused
                 vblanks = 0;
                 wobble = wobble % 3 + 1;
                 script_tick(L); // can change level (leaving after a win)

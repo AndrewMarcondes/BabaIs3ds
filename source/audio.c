@@ -22,7 +22,7 @@ static char want[256], cur[256];
 
 #define SFX_CHANNELS 6
 #define SFX_CACHE 128
-#define SFX_BUDGET (8 * 1024 * 1024) // decoded bytes kept before the cache is emptied
+#define SFX_BUDGET (6 * 1024 * 1024) // decoded bytes kept before the cache is emptied (one more sound can exceed it)
 
 typedef struct {
     char path[160];
@@ -50,8 +50,19 @@ static void fill(ndspWaveBuf *b) {
     ndspChnWaveBufAdd(0, b);
 }
 
+// ndspChnWaveBufClear takes effect at the next DSP frame (~5ms); wait before reusing or freeing the memory.
+static void wait_idle(int first, int last) {
+    for (int tries = 0; tries < 20; tries++) {
+        int busy = 0;
+        for (int c = first; c <= last; c++) busy |= ndspChnIsPlaying(c);
+        if (!busy) return;
+        svcSleepThread(1000000); // 1ms
+    }
+}
+
 static void stop(void) {
     ndspChnWaveBufClear(0);
+    wait_idle(0, 0);
     if (playing) ov_clear(&vf); // also closes the FILE
     playing = 0;
 }
@@ -115,6 +126,7 @@ void music_play(const char *path) {
 
 static void sfx_clear(void) {
     for (int c = 1; c <= SFX_CHANNELS; c++) ndspChnWaveBufClear(c);
+    wait_idle(1, SFX_CHANNELS);
     for (int i = 0; i < nsfx; i++) if (sfx[i].pcm) linearFree(sfx[i].pcm);
     nsfx = 0;
     sfx_bytes = 0;
@@ -147,6 +159,7 @@ static Sfx *sfx_load(const char *path) {
         sfx_bytes += bytes;
     }
     ov_clear(&v);
+    if (!e->pcm && bytes) nsfx--; // out of memory: don't remember it as silent, try again next time
     return e;
 }
 
