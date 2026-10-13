@@ -7,8 +7,6 @@
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 #define SAVE_FILE "sdmc:/3ds/baba/save.ini"
 
-#define HELP "baba3ds\nD-pad/Circle move  B undo  X restart\nA wait / enter level  SELECT back to map\nSTART quit\n\n"
-
 static uint8_t frame[400 * 240 * 3];
 
 // Top framebuffer is 240x400 column-major, bottom-to-top, BGR8.
@@ -42,13 +40,17 @@ static void play_sound(const char *name) {
     sfx_play(path);
 }
 
-// Reprints the help plus the shim's message (level name, "Cleared: ...") when the message changes.
-static void show_message(lua_State *L) {
-    static char last[256] = "\x01";
-    const char *msg = script_string(L, "message");
-    if (!strcmp(msg, last)) return;
-    snprintf(last, sizeof last, "%s", msg);
-    printf("\x1b[2J\x1b[H" HELP "%s\n", last);
+static char notice[160]; // startup timings and warnings, shown under the status
+
+// Redraws the bottom screen when the shim's status text (level, rules, controls) or the notice changes.
+static void show_status(lua_State *L) {
+    static char last[2048] = "\x01";
+    char text[2048];
+    if (script_status(L, text, sizeof text)) return;
+    snprintf(text + strlen(text), sizeof text - strlen(text), "\n\x1b[37;2m%s\x1b[0m", notice);
+    if (!strcmp(text, last)) return;
+    snprintf(last, sizeof last, "%s", text);
+    printf("\x1b[2J\x1b[H%s", text);
 }
 
 int main(void) {
@@ -56,7 +58,7 @@ int main(void) {
     gfxSetDoubleBuffering(GFX_TOP, false);
     consoleInit(GFX_BOTTOM, NULL);
     romfsInit();
-    printf(HELP);
+    printf("baba3ds: loading...\n");
     int audio = !music_init();
 
     u64 t0 = osGetTime();
@@ -71,14 +73,12 @@ int main(void) {
         script_draw(L, frame, 400, 240, 1); // second draw: sprites cached, the per-turn cost
         u64 t3 = osGetTime();
         present();
-        show_message(L);
-        printf("scripts %llums, start %llums, first draw %llums, draw %llums\n", topen - t0, t1 - topen, t2 - t1, t3 - t2);
-        if (!audio) printf("no audio: needs sdmc:/3ds/dspfirm.cdc\n");
-        else {
-            FILE *f = fopen(DATA_DIR "/Sounds/pop1.ogg", "rb");
-            if (f) fclose(f);
-            else printf("no sound effects: run tools/extract_sounds.py\n");
-        }
+        int n = snprintf(notice, sizeof notice, "boot %llu+%llums, draw %llu/%llums\n", topen - t0, t1 - topen, t2 - t1, t3 - t2);
+        FILE *f = fopen(DATA_DIR "/Sounds/pop1.ogg", "rb");
+        if (f) fclose(f);
+        if (!audio) snprintf(notice + n, sizeof notice - n, "no audio: needs sdmc:/3ds/dspfirm.cdc");
+        else if (!f) snprintf(notice + n, sizeof notice - n, "no sound effects: see README");
+        show_status(L);
         update_music(L);
     }
 
@@ -96,7 +96,7 @@ int main(void) {
             int redraw = 0;
             if (key) {
                 script_input(L, key);
-                show_message(L);
+                show_status(L);
                 update_music(L);
                 script_sounds(L, play_sound);
                 redraw = 1;

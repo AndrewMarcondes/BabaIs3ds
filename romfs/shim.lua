@@ -521,6 +521,49 @@ function engine.tick()
 	animate()
 end
 
+---------------------------------------------------------------- bottom screen
+
+local W = 39 -- libctru console: 40 columns, 30 rows on the bottom screen
+local function fit(t) return #t > W and t:sub(1, W - 1) .. "~" or t end
+
+-- "baba on rock is you": target, conditions ("on rock", "lonely"), verb, effect
+local function ruletext(r)
+	local words = { r[1][1] }
+	for _, c in ipairs(r[2] or {}) do
+		local params = type(c[2]) == "table" and #c[2] > 0 and (" " .. table.concat(c[2], " and ")) or ""
+		words[#words + 1] = tostring(c[1]) .. params
+	end
+	words[#words + 1] = r[1][2]
+	words[#words + 1] = r[1][3]
+	return table.concat(words, " ")
+end
+
+-- Text for the bottom screen (with console colour codes); C prints it whenever it changes.
+function engine.status()
+	local yellow, grey, reset = "\27[33m", "\27[37;2m", "\27[0m"
+	local out = { yellow .. fit(engine.message:gsub("\n", " / ")) .. reset, "" }
+	if engine.ismap() then
+		local c = engine.objects[generaldata4.values[MAINCURSOR]]
+		local l = c and engine.objects[c.values[CURSOR_ONLEVEL]]
+		if l and l.className == "level" then out[#out + 1] = fit("> " .. l.strings[U_LEVELNAME]) end
+	else
+		local seen, n = {}, 0
+		for _, r in ipairs(visualfeatures or {}) do
+			local t = ruletext(r)
+			if not seen[t] then
+				seen[t] = true
+				n = n + 1
+				if n <= 18 then out[#out + 1] = fit(t) elseif n == 19 then out[#out + 1] = "..." end
+			end
+		end
+		if engine.won then out[#out + 1] = "" out[#out + 1] = yellow .. "Congratulations!" .. reset end
+	end
+	while #out < 24 do out[#out + 1] = "" end
+	out[#out + 1] = grey .. "D-pad move   A wait/enter   B undo"
+	out[#out + 1] = "X restart   SELECT map   START quit" .. reset
+	return table.concat(out, "\n")
+end
+
 ---------------------------------------------------------------- drawing
 
 -- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile,

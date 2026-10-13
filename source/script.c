@@ -217,3 +217,14 @@ int script_sounds(lua_State *L, void (*play)(const char *name)) {
     lua_pop(L, 1);
     return n;
 }
+
+int script_status(lua_State *L, char *out, int len) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "status");
+    lua_remove(L, -2);
+    out[0] = 0;
+    if (script_call(L, 0, 1)) return -1;
+    snprintf(out, len, "%s", lua_isstring(L, -1) ? lua_tostring(L, -1) : "");
+    lua_pop(L, 1);
+    return 0;
+}

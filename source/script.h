@@ -27,3 +27,6 @@ const char *script_string(lua_State *L, const char *field);
 
 // Calls play(name) for each sound the game queued since the last call (names are files in Data/Sounds, no extension).
 int script_sounds(lua_State *L, void (*play)(const char *name));
+
+// Bottom-screen text from engine.status() (level name, active rules, controls) into out. 0 on success.
+int script_status(lua_State *L, char *out, int len);

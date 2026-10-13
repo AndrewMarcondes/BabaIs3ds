@@ -1,0 +1,1 @@
+for _, n in ipairs({"0level","1level","100level","106level","177level","208level"}) do engine.gotolevel(n) local s = engine.status() local lines = select(2, s:gsub("\n", "")) + 1 assert(lines <= 26, n .. " status too tall: " .. lines) end print("status fits")
