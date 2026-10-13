@@ -24,3 +24,6 @@ int script_tick(lua_State *L);
 
 // engine.<field> as a string ("" if unset), e.g. "message".
 const char *script_string(lua_State *L, const char *field);
+
+// Calls play(name) for each sound the game queued since the last call (names are files in Data/Sounds, no extension).
+int script_sounds(lua_State *L, void (*play)(const char *name));

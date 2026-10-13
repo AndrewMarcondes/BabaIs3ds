@@ -47,9 +47,13 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   this map; a map is cleared at `unlockcount` cleared levels. The original's gate animation (gateunlock, MF_findgates,
   COMPLETED < -1 gate objects) is skipped: a met gate path is just saved open. Verify against the real game when possible.
 - Unlock animation.
-- Music: .ld music= track from Worlds/<w>/Music or Data/Music, streamed by source/music.c (tremor + ndsp).
-  Empty music= defaults to map/baba (a guess). Sound effects: only one file in Data/Sounds; the rest are probably
-  packed in the game binary and need extracting.
+- Music: .ld music= track from Worlds/<w>/Music or Data/Music, streamed by source/audio.c (tremor + ndsp).
+  Empty music= defaults to map/baba (a guess).
+- Sound effects live in Contents/Resources/Assets.dat (Chowdren pack; header = (u32 offset, u32 size) per asset,
+  sounds are assets 3206..3450 as [u32 2][u32 len][ogg]). Names: gperf table in the executable
+  (739 name pointers at file offset 6890944, int32 ids at 0x61E6B0). tools/extract_sounds.py writes Data/Sounds/<name>.ogg.
+- Sounds per turn: the game sets generaldata2.strings[TURNSOUND/REMOVALSOUND] (setsoundname, only while
+  editor.strings[MENU] == "ingame"); engine runs checkturnsound() then plays them. Engine adds undo1-5, restart, winner2 (guessed).
 - Animation: walk frame = VISUALDIR (movement.lua advances it), `animate()` turns it into unit.direction (DIR*8+VISUALDIR for tiling 2/3,
   VISUALDIR for 4). Engine calls animate() after turns and on a ~200ms timer; all sprites also wobble through _1/_2/_3 files on that timer.
 - Object overrides: per changed object MF_create + addchange + MF_cleanremove before units; addunit applies (dochanges). Sprite = changes[class].image/root.

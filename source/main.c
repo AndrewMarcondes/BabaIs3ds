@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "script.h"
-#include "music.h"
+#include "audio.h"
 
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 #define SAVE_FILE "sdmc:/3ds/baba/save.ini"
@@ -36,6 +36,12 @@ static void update_music(lua_State *L) {
     music_play(path);
 }
 
+static void play_sound(const char *name) {
+    char path[160];
+    snprintf(path, sizeof path, DATA_DIR "/Sounds/%s.ogg", name);
+    sfx_play(path);
+}
+
 // Reprints the help plus the shim's message (level name, "Cleared: ...") when the message changes.
 static void show_message(lua_State *L) {
     static char last[256] = "\x01";
@@ -67,6 +73,11 @@ int main(void) {
         show_message(L);
         printf("boot %llums, first draw %llums, draw %llums\n", t1 - t0, t2 - t1, t3 - t2);
         if (!audio) printf("no audio: needs sdmc:/3ds/dspfirm.cdc\n");
+        else {
+            FILE *f = fopen(DATA_DIR "/Sounds/pop1.ogg", "rb");
+            if (f) fclose(f);
+            else printf("no sound effects: run tools/extract_sounds.py\n");
+        }
         update_music(L);
     }
 
@@ -86,6 +97,7 @@ int main(void) {
                 script_input(L, key);
                 show_message(L);
                 update_music(L);
+                script_sounds(L, play_sound);
                 redraw = 1;
             }
             if (++vblanks >= 12) { // ~5 per second, like the original's sprite wobble

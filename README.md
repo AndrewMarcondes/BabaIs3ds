@@ -9,8 +9,12 @@ Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
 
 ## Run
 1. Copy your game's `Data` folder (Mac: `Baba Is You.app/Contents/Resources/Data`) to the SD card as `sdmc:/3ds/baba/Data`.
-2. Copy `baba3ds.3dsx` to `sdmc:/3ds/` and launch from the Homebrew Launcher.
-3. For music, the console's DSP firmware must be at `sdmc:/3ds/dspfirm.cdc` (Luma3DS: Rosalina menu → Miscellaneous
+2. Sound effects are packed inside the Mac app, so extract them into that Data copy once (Python 3, no extra packages):
+
+       python3 tools/extract_sounds.py "<...>/Baba Is You.app" "<SD card>/3ds/baba/Data/Sounds"
+
+3. Copy `baba3ds.3dsx` to `sdmc:/3ds/` and launch from the Homebrew Launcher.
+4. For music and sound, the console's DSP firmware must be at `sdmc:/3ds/dspfirm.cdc` (Luma3DS: Rosalina menu → Miscellaneous
    options → Dump DSP firmware). Azahar needs the same file in its `sdmc/3ds/` folder.
 
 ## Controls

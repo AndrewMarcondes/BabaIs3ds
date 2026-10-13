@@ -184,3 +184,18 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
 int script_input(lua_State *L, const char *key) { return engine_call(L, "input", key); }
 
 int script_tick(lua_State *L) { return engine_call(L, "tick", NULL); }
+
+int script_sounds(lua_State *L, void (*play)(const char *name)) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "takesounds");
+    lua_remove(L, -2);
+    if (script_call(L, 0, 1)) return 0;
+    int n = lua_rawlen(L, -1);
+    for (int i = 1; i <= n; i++) {
+        lua_rawgeti(L, -1, i);
+        if (lua_isstring(L, -1)) play(lua_tostring(L, -1));
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    return n;
+}

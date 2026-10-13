@@ -17,12 +17,16 @@ print("level 1:", #units, "units; rules: " .. rules())
 local f0 = b.direction
 for i = 1, 3 do engine.input("right") end
 assert(b.values[XPOS] == x0 + 3, "baba did not move")
+local played = engine.takesounds()
+assert(#played >= 1 and played[#played]:match("^move"), "a move should queue a movement sound, got " .. table.concat(played, ","))
 assert(b.direction ~= f0 and b.direction // 8 == 0, "walking right should advance the walk frame, got " .. b.direction)
 engine.input("up")
 assert(b.direction // 8 == 1, "facing up should use the up frames, got " .. b.direction)
 engine.input("undo")
+engine.takesounds()
 engine.input("undo")
 assert(b.values[XPOS] == x0 + 2, "undo did not step back")
+assert((engine.takesounds()[1] or ""):match("^undo%d$"), "undo should queue an undo sound")
 local function rockat(x, y)
 	for _, u in ipairs(units) do
 		if u.strings[UNITNAME] == "rock" and u.values[XPOS] == x and u.values[YPOS] == y then return u end

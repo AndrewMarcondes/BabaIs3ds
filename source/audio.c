@@ -1,5 +1,6 @@
-// Streams one looping Ogg Vorbis track through ndsp on a background thread (3DS only).
-#include "music.h"
+// Audio (3DS only): one looping Ogg Vorbis music track streamed on ndsp channel 0 by a background thread,
+// plus short sound effects decoded whole into memory and played on channels 1..SFX_CHANNELS.
+#include "audio.h"
 #include <3ds.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,6 +19,21 @@ static LightEvent wake;
 static LightLock lock;
 static volatile int quit;
 static char want[256], cur[256];
+
+#define SFX_CHANNELS 6
+#define SFX_CACHE 128
+#define SFX_BUDGET (8 * 1024 * 1024) // decoded bytes kept before the cache is emptied
+
+typedef struct {
+    char path[160];
+    s16 *pcm; // linear memory, NULL if the file is missing or undecodable
+    u32 frames;
+    int channels, rate;
+} Sfx;
+static Sfx sfx[SFX_CACHE];
+static int nsfx, next_sfx;
+static size_t sfx_bytes;
+static ndspWaveBuf sfx_buf[SFX_CHANNELS];
 
 // Decodes the next chunk into b and queues it; loops at the end of the track.
 static void fill(ndspWaveBuf *b) {
@@ -97,6 +113,61 @@ void music_play(const char *path) {
     LightEvent_Signal(&wake);
 }
 
+static void sfx_clear(void) {
+    for (int c = 1; c <= SFX_CHANNELS; c++) ndspChnWaveBufClear(c);
+    for (int i = 0; i < nsfx; i++) if (sfx[i].pcm) linearFree(sfx[i].pcm);
+    nsfx = 0;
+    sfx_bytes = 0;
+}
+
+// Decodes a whole .ogg into linear memory (cached by path; missing files are cached too).
+static Sfx *sfx_load(const char *path) {
+    for (int i = 0; i < nsfx; i++)
+        if (!strcmp(sfx[i].path, path)) return &sfx[i];
+    if (nsfx == SFX_CACHE || sfx_bytes > SFX_BUDGET) sfx_clear();
+    Sfx *e = &sfx[nsfx++];
+    memset(e, 0, sizeof *e);
+    snprintf(e->path, sizeof e->path, "%s", path);
+    FILE *f = fopen(path, "rb");
+    if (!f) return e;
+    OggVorbis_File v;
+    if (ov_open(f, &v, NULL, 0)) { fclose(f); return e; }
+    vorbis_info *vi = ov_info(&v, -1);
+    ogg_int64_t total = ov_pcm_total(&v, -1);
+    e->channels = vi->channels > 1 ? 2 : 1;
+    e->rate = vi->rate;
+    size_t bytes = total > 0 ? (size_t)total * e->channels * 2 : 0;
+    if (bytes && bytes < SFX_BUDGET && (e->pcm = linearAlloc(bytes))) {
+        size_t got = 0;
+        int bitstream;
+        long r;
+        while (got < bytes && (r = ov_read(&v, (char *)e->pcm + got, bytes - got, &bitstream)) > 0) got += r;
+        e->frames = got / (e->channels * 2);
+        DSP_FlushDataCache(e->pcm, got);
+        sfx_bytes += bytes;
+    }
+    ov_clear(&v);
+    return e;
+}
+
+void sfx_play(const char *path) {
+    if (!thread) return;
+    Sfx *e = sfx_load(path);
+    if (!e->pcm || !e->frames) return;
+    int c = 1 + next_sfx;
+    ndspWaveBuf *b = &sfx_buf[next_sfx];
+    next_sfx = (next_sfx + 1) % SFX_CHANNELS; // round-robin: the oldest effect gets cut if all are busy
+    ndspChnWaveBufClear(c);
+    ndspChnReset(c);
+    ndspChnSetInterp(c, NDSP_INTERP_LINEAR);
+    ndspChnSetRate(c, e->rate);
+    ndspChnSetFormat(c, e->channels == 2 ? NDSP_FORMAT_STEREO_PCM16 : NDSP_FORMAT_MONO_PCM16);
+    memset(b, 0, sizeof *b);
+    b->data_pcm16 = e->pcm;
+    b->nsamples = e->frames;
+    ndspChnWaveBufAdd(c, b);
+}
+
 void music_exit(void) {
     if (!thread) return;
     quit = 1;
@@ -105,6 +176,7 @@ void music_exit(void) {
     threadFree(thread);
     thread = NULL;
     stop();
+    sfx_clear();
     ndspExit();
     linearFree(pcm);
 }

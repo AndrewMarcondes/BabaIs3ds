@@ -96,6 +96,35 @@ function MF_setfile(storage, path) end -- files are chosen by the engine (gotole
 
 local function savenum(group, key) return tonumber(MF_read("save", group, key)) or 0 end
 
+---------------------------------------------------------------- sound
+
+-- Sounds to play this frame, by file name in Data/Sounds (taken by C after each input via engine.takesounds).
+engine.sounds = {}
+
+function MF_playsound(name) if name and name ~= "" then engine.sounds[#engine.sounds + 1] = name end end
+function MF_playsound_freq(name) MF_playsound(name) end
+function MF_playsound_channel(name) MF_playsound(name) end
+function MF_playsound_musicvolume(name) MF_playsound(name) end
+function MF_playsound_full(name) MF_playsound(name) end
+-- shortcut: sounds always play to the end; loops (MF_playsound_repeat) play once and MF_stopsound is ignored
+function MF_playsound_repeat(name) MF_playsound(name) end
+
+-- The game names the turn's movement/removal sounds in generaldata2 strings; the engine plays them after the turn.
+local function turnsounds()
+	checkturnsound()
+	for _, k in ipairs({ TURNSOUND, REMOVALSOUND }) do
+		local name = generaldata2.strings[k]
+		if name ~= "silent" then MF_playsound(name) end
+		generaldata2.strings[k] = ""
+	end
+end
+
+function engine.takesounds()
+	local t = engine.sounds
+	engine.sounds = {}
+	return t
+end
+
 ---------------------------------------------------------------- objects
 
 function MF_emptycreate(class, x, y)
@@ -376,6 +405,7 @@ function engine.gotolevel(name)
 		engine.levelserial = engine.levelserial + 1
 	end
 	generaldata.strings[CURRLEVEL] = name
+	editor.strings[MENU] = "ingame" -- the game's turn sounds only play in this menu state
 	engine.loadlevel(level)
 	engine.message = g.name or name
 	return true
@@ -402,6 +432,7 @@ end
 
 -- shortcut: restart is a plain reload, so it can't be undone like in the real game
 function MF_restart(instant)
+	MF_playsound("restart")
 	engine.gotolevel(generaldata.strings[CURRLEVEL])
 end
 
@@ -414,6 +445,7 @@ function MF_win()
 		MF_store("save", world .. "_prize", "total", savenum(world .. "_prize", "total") + 1)
 	end
 	MF_store("save", world, level, 3)
+	MF_playsound("winner2")
 	engine.won = true
 end
 
@@ -439,12 +471,13 @@ function engine.input(key)
 		end
 	end
 	if key == "undo" then
-		undo()
+		if undo() == 1 then MF_playsound("undo" .. math.random(1, 5)) end
 		updatecode = 1
 		code()
 	elseif key ~= "enter" then
 		command(key)
 		block()
+		if key ~= "restart" then turnsounds() end
 		newundo()
 	end
 
