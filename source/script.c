@@ -90,9 +90,19 @@ static int l_readlevel(lua_State *L) {
     return 1;
 }
 
+// TEMP profiling: engine_ms() -> milliseconds, for timing startup steps on hardware
+#ifdef __3DS__
+#include <3ds.h>
+static int l_ms(lua_State *L) { lua_pushinteger(L, (lua_Integer)osGetTime()); return 1; }
+#else
+#include <time.h>
+static int l_ms(lua_State *L) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); lua_pushinteger(L, t.tv_sec * 1000 + t.tv_nsec / 1000000); return 1; }
+#endif
+
 lua_State *script_open(const char *data, const char *shim_path, const char *savefile) {
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
+    lua_register(L, "engine_ms", l_ms);
     lua_register(L, "engine_readlevel", l_readlevel);
     // constants/values first: other files use their globals at load time
     const char *first[] = {"constants.lua", "values.lua"};
@@ -148,7 +158,16 @@ const char *script_string(lua_State *L, const char *field) {
     return s ? s : "";
 }
 
-void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float progress) {
+// The draw list, kept in C so the frames of a slide can be drawn without calling into Lua.
+typedef struct {
+    char sprite[48];
+    uint8_t root, part, c1, c2;
+    int16_t frame, x, y, fx, fy; // x/y = where it is now, fx/fy = where the last move started (1/16 tiles)
+} Item;
+static Item items[4096];
+static int nitems;
+
+void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
     static int serial = -1;
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "levelserial");
@@ -164,7 +183,8 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float 
         if (render_begin_level(script_string(L, "data"), script_string(L, "world"), script_string(L, "palette"), w, h, fbw, fbh)) {
             printf("cannot load palette %s, using default\n", script_string(L, "palette"));
             if (render_begin_level(script_string(L, "data"), script_string(L, "world"), "default.png", w, h, fbw, fbh)) {
-                serial = -1; // try again next draw; nothing can be drawn without a palette
+                serial = -1; // try again next time; nothing can be drawn without a palette
+                nitems = 0;
                 return;
             }
         }
@@ -184,21 +204,44 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float 
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "drawlist");
     lua_remove(L, -2);
-    lua_pushnumber(L, progress);
-    if (script_call(L, 1, 1)) return;
-    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part }
+    nitems = 0;
+    if (script_call(L, 0, 1)) return;
+    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part, fromx, fromy }
     int n = lua_rawlen(L, -1);
-    for (int i = 1; i <= n; i++) {
+    for (int i = 1; i <= n && nitems < (int)(sizeof items / sizeof *items); i++) {
         lua_rawgeti(L, -1, i);
-        int v[8];
-        for (int k = 0; k < 7; k++) { lua_rawgeti(L, -1, k + 3); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
+        int v[11];
+        for (int k = 2; k < 11; k++) { lua_rawgeti(L, -1, k + 1); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
+        Item *it = &items[nitems++];
         lua_rawgeti(L, -1, 2);
-        int root = lua_toboolean(L, -1);
+        it->root = lua_toboolean(L, -1);
         lua_rawgeti(L, -2, 1);
-        render_sprite(fb, lua_tostring(L, -1), root, v[0], wobble, v[6], v[1], v[2], v[3], v[4]);
+        snprintf(it->sprite, sizeof it->sprite, "%s", lua_tostring(L, -1));
         lua_pop(L, 3);
+        it->frame = v[2];
+        it->x = v[3];
+        it->y = v[4];
+        it->c1 = v[5];
+        it->c2 = v[6];
+        it->part = v[8];
+        it->fx = v[9];
+        it->fy = v[10];
     }
     lua_pop(L, 1);
+}
+
+void script_render(uint8_t *fb, int wobble, float progress) {
+    if (!render_backdrop_cached(fb)) return;
+    for (int i = 0; i < nitems; i++) {
+        const Item *it = &items[i];
+        int x = it->fx + (int)((it->x - it->fx) * progress), y = it->fy + (int)((it->y - it->fy) * progress);
+        render_sprite(fb, it->sprite, it->root, it->frame, wobble, it->part, x, y, it->c1, it->c2);
+    }
+}
+
+void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float progress) {
+    script_refresh(L, fb, fbw, fbh);
+    script_render(fb, wobble, progress);
 }
 
 int script_input(lua_State *L, const char *key) { return engine_call(L, "input", key); }

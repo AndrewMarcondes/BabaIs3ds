@@ -443,8 +443,48 @@ function engine.gotolevel(name)
 	return true
 end
 
+-- TEMP profiling: time the startup steps and keep the slowest in engine.profile for the bottom screen
+local function profile(fn)
+	local spent, wrapped = {}, {}
+	local function wrap(t, k, label)
+		local f = t[k]
+		if type(f) ~= "function" then return end
+		wrapped[#wrapped + 1] = { t, k, f }
+		t[k] = function(...)
+			local t0 = engine_ms()
+			local r = table.pack(f(...))
+			spent[label] = (spent[label] or 0) + engine_ms() - t0
+			return table.unpack(r, 1, r.n)
+		end
+	end
+	for _, k in ipairs({ "init", "setupmenu", "firstlevel", "sublevel", "engine_readlevel", "clearunits", "addchange",
+		"addunit", "addpath", "addspecial", "loadlevelcompletion", "dynamictiling", "updatecolours", "startblock",
+		"animate", "openlevels", "mapcursor_load", "MF_store", "MF_read", "code", "restoredefaults", "newundo",
+		"setupnounlists", "generatetiles", "formatobjlist", "generatefreqs", "collectgarbage", "print" }) do wrap(_G, k, k) end
+	wrap(engine, "readini", "readini")
+	wrap(engine, "loadlevel", "loadlevel(total)")
+	wrap(io, "open", "io.open")
+	wrap(os, "rename", "os.rename")
+	wrap(os, "remove", "os.remove")
+	local t0 = engine_ms()
+	local r = fn()
+	local total = engine_ms() - t0
+	for _, w in ipairs(wrapped) do w[1][w[2]] = w[3] end
+	local keys = {}
+	for k in pairs(spent) do keys[#keys + 1] = k end
+	table.sort(keys, function(a, b) return spent[a] > spent[b] end)
+	local out = { "start " .. total .. "ms:" }
+	for i = 1, math.min(8, #keys) do out[#out + 1] = keys[i] .. " " .. spent[keys[i]] end
+	engine.profile = table.concat(out, ", ")
+	return r
+end
+
 -- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
 function engine.boot()
+	if engine_ms then return profile(engine.boot_) end
+	return engine.boot_()
+end
+function engine.boot_()
 	init(1, 1, 1, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
 	setupmenu(10, 11, 12, 13, 14, 15, true) -- editor objects; map code reads editor.values
 	generaldata.strings[WORLD] = "baba"
@@ -612,13 +652,13 @@ end
 
 -- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile, "#cross" = X,
 -- "@file" = exact sprite file; part 1/2 = left/right half of the tile.
-function engine.drawlist(progress)
-	progress = progress or 1 -- 0..1 through the current move
+function engine.drawlist()
 	local list = {}
-	-- positions go to C in 1/16 tiles so moving units can be drawn between tiles
+	-- positions go to C in 1/16 tiles; e[10], e[11] = where a unit's last move started (C slides between them)
 	local function add(...)
 		local e = { ... }
-		e[4], e[5] = math.floor(e[4] * 16 + 0.5), math.floor(e[5] * 16 + 0.5)
+		e[4], e[5] = e[4] * 16, e[5] * 16
+		e[10], e[11] = e[10] and e[10] * 16 or e[4], e[11] and e[11] * 16 or e[5]
 		list[#list + 1] = e
 	end
 
@@ -682,10 +722,9 @@ function engine.drawlist(progress)
 			local root = t.sprite_in_root ~= false
 			if ch.root ~= nil then root = ch.root end
 			local x, y, p = u.values[XPOS], u.values[YPOS], engine.prev[u.fixed]
-			if p and math.abs(x - p[1]) <= 1 and math.abs(y - p[2]) <= 1 then -- slide one-tile moves; jumps snap
-				x, y = p[1] + (x - p[1]) * progress, p[2] + (y - p[2]) * progress
-			end
-			add(ch.image or t.sprite or u.className, root, frame, x, y, c[1], c[2], u.values[ZLAYER])
+			local fx, fy = x, y
+			if p and math.abs(x - p[1]) <= 1 and math.abs(y - p[2]) <= 1 then fx, fy = p[1], p[2] end -- slide one-tile moves; jumps snap
+			add(ch.image or t.sprite or u.className, root, frame, x, y, c[1], c[2], u.values[ZLAYER], nil, fx, fy)
 		end
 	end
 	for id in pairs(engine.blocked) do

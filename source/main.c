@@ -7,7 +7,8 @@
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 #define SAVE_FILE "sdmc:/3ds/baba/save.ini"
 
-#define SLIDE_FRAMES 5 // a move slides over ~80ms, like the original
+#define SLIDE_MS 80 // a move slides over ~80ms, like the original
+#define TICK_MS 200 // animation tick: sprite wobble and animated objects
 
 static uint8_t frame[400 * 240 * 3];
 
@@ -42,7 +43,7 @@ static void play_sound(const char *name) {
     sfx_play(path);
 }
 
-static char notice[160];    // startup timings and warnings, shown under the status
+static char notice[400];    // startup timings and warnings, shown under the status
 static char shown[2048];    // what the bottom screen shows now; cleared to force a redraw
 
 // Redraws the bottom screen when the shim's status text (level, rules, controls) or the notice changes.
@@ -90,16 +91,19 @@ int main(void) {
         if (f) fclose(f);
         if (!audio) snprintf(notice + n, sizeof notice - n, "no audio: needs sdmc:/3ds/dspfirm.cdc");
         else if (!f) snprintf(notice + n, sizeof notice - n, "no sound effects: see README");
+        snprintf(notice + strlen(notice), sizeof notice - strlen(notice), "\n%s", script_string(L, "profile")); // TEMP
         show_status(L);
         update_music(L);
     }
 
     hidSetRepeatParameters(15, 6);
-    int wobble = 1, vblanks = 0, paused = 0, sel = 0;
-    int slide = SLIDE_FRAMES; // frames into the last move's slide animation
+    // Animation runs on the clock, not on loop passes: a slow frame on hardware must not stall the wobble.
+    int wobble = 1, paused = 0, sel = 0, sliding = 0;
+    u64 last_tick = osGetTime(), slide_start = 0;
     while (aptMainLoop()) {
         hidScanInput();
         u32 down = hidKeysDown(), rep = hidKeysDownRepeat();
+        u64 now = osGetTime();
         if (!ok) {
             if (down & KEY_START) break;
         } else {
@@ -113,7 +117,10 @@ int main(void) {
                     key = sel == 1 ? "restart" : sel == 2 ? "leave" : NULL;
                     paused = 0;
                 } else if (down & (KEY_B | KEY_START)) paused = 0;
-                if (!paused) show_status(L);
+                if (!paused) {
+                    show_status(L);
+                    last_tick = now; // the win delay and animations were frozen while paused
+                }
             } else if (down & KEY_START) {
                 paused = 1;
                 sel = 0;
@@ -124,29 +131,33 @@ int main(void) {
                     : rep & KEY_DOWN ? "down" : rep & KEY_B ? "undo" : down & KEY_A ? "enter"
                     : down & KEY_X ? "restart" : down & KEY_SELECT ? "leave" : NULL;
             }
-            int redraw = 0;
+            int redraw = 0, refresh = 0;
             if (key) {
                 script_input(L, key);
                 show_status(L);
                 update_music(L);
                 script_sounds(L, play_sound);
-                slide = 0;
+                refresh = sliding = 1;
+                slide_start = now = osGetTime(); // the turn itself can take a while on hardware
             }
-            if (slide < SLIDE_FRAMES) {
-                slide++;
-                redraw = 1;
-            }
-            if (!paused && ++vblanks >= 12) { // ~5 per second, like the original's sprite wobble; frozen while paused
-                vblanks = 0;
+            if (!paused && now - last_tick >= TICK_MS) { // sprite wobble + animated objects, ~5 per second
+                last_tick = now;
                 wobble = wobble % 3 + 1;
                 script_tick(L); // can change level (leaving after a win)
                 show_status(L);
                 update_music(L);
                 script_sounds(L, play_sound);
+                refresh = 1;
+            }
+            float progress = 1;
+            if (sliding) {
+                progress = (float)(now - slide_start) / SLIDE_MS;
+                if (progress >= 1) progress = 1, sliding = 0;
                 redraw = 1;
             }
-            if (redraw) {
-                script_draw(L, frame, 400, 240, wobble, (float)slide / SLIDE_FRAMES);
+            if (refresh) script_refresh(L, frame, 400, 240);
+            if (refresh || redraw) {
+                script_render(frame, wobble, progress);
                 present();
             }
         }

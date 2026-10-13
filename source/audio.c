@@ -20,6 +20,11 @@ static LightLock lock;
 static volatile int quit;
 static char want[256], cur[256];
 
+#define SFX_QUEUE 8
+static char queue[SFX_QUEUE][160]; // sounds asked for by the game, played by the audio thread
+static int qhead, qtail;
+static void sfx_start(const char *path);
+
 #define SFX_CHANNELS 6
 #define SFX_CACHE 128
 #define SFX_BUDGET (6 * 1024 * 1024) // decoded bytes kept before the cache is emptied (one more sound can exceed it)
@@ -92,6 +97,10 @@ static void run(void *arg) {
         } else if (playing)
             for (int i = 0; i < NBUF; i++)
                 if (wbuf[i].status == NDSP_WBUF_DONE) fill(&wbuf[i]);
+        while (qhead != qtail) {
+            sfx_start(queue[qhead]);
+            qhead = (qhead + 1) % SFX_QUEUE;
+        }
         LightLock_Unlock(&lock);
         LightEvent_Wait(&wake);
     }
@@ -163,8 +172,8 @@ static Sfx *sfx_load(const char *path) {
     return e;
 }
 
-void sfx_play(const char *path) {
-    if (!thread) return;
+// Runs on the audio thread: decoding a sound for the first time takes long enough to stutter the game.
+static void sfx_start(const char *path) {
     Sfx *e = sfx_load(path);
     if (!e->pcm || !e->frames) return;
     int c = 1 + next_sfx;
@@ -179,6 +188,17 @@ void sfx_play(const char *path) {
     b->data_pcm16 = e->pcm;
     b->nsamples = e->frames;
     ndspChnWaveBufAdd(c, b);
+}
+
+void sfx_play(const char *path) {
+    if (!thread) return;
+    LightLock_Lock(&lock);
+    if ((qtail + 1) % SFX_QUEUE != qhead) { // full: drop it, a burst that big is noise anyway
+        snprintf(queue[qtail], sizeof queue[0], "%s", path);
+        qtail = (qtail + 1) % SFX_QUEUE;
+    }
+    LightLock_Unlock(&lock);
+    LightEvent_Signal(&wake);
 }
 
 void music_exit(void) {
