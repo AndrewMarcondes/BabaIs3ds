@@ -147,7 +147,7 @@ const char *script_string(lua_State *L, const char *field) {
     return s ? s : "";
 }
 
-void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
+void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float progress) {
     static int serial = -1;
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "levelserial");
@@ -183,7 +183,8 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble) {
     lua_getglobal(L, "engine");
     lua_getfield(L, -1, "drawlist");
     lua_remove(L, -2);
-    if (script_call(L, 0, 1)) return;
+    lua_pushnumber(L, progress);
+    if (script_call(L, 1, 1)) return;
     // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part }
     int n = lua_rawlen(L, -1);
     for (int i = 1; i <= n; i++) {

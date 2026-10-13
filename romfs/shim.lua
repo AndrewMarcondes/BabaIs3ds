@@ -1,7 +1,7 @@
 -- Engine side of the Lua boundary (what Chowdren/Fusion provided). Game objects are plain tables.
 -- MF_* behaviour follows Data/MF_documentation.txt from the game.
 
-engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {}, blocked = {} }
+engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {}, blocked = {}, prev = {} }
 
 local SYSTEM_IDS = 100 -- ids below this are engine/system objects (generaldata etc.) and survive level changes
 local VARS_ID = 9      -- scratch object handed to mapcursor_enter
@@ -511,6 +511,8 @@ end
 -- One player input per turn: right/up/left/down/idle/undo/restart from the game's `keys` table,
 -- plus "enter" (enter level on a map, otherwise wait) and "leave" (back to the map).
 function engine.input(key)
+	engine.prev = {} -- where units were before this turn, for the slide animation
+	for _, u in ipairs(units) do engine.prev[u.fixed] = { u.values[XPOS], u.values[YPOS] } end
 	if key == "leave" then
 		goup()
 		return
@@ -602,9 +604,15 @@ end
 
 -- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile, "#cross" = X,
 -- "@file" = exact sprite file; part 1/2 = left/right half of the tile.
-function engine.drawlist()
+function engine.drawlist(progress)
+	progress = progress or 1 -- 0..1 through the current move
 	local list = {}
-	local function add(...) list[#list + 1] = { ... } end
+	-- positions go to C in 1/16 tiles so moving units can be drawn between tiles
+	local function add(...)
+		local e = { ... }
+		e[4], e[5] = math.floor(e[4] * 16 + 0.5), math.floor(e[5] * 16 + 0.5)
+		list[#list + 1] = e
+	end
 
 	-- open paths: the path object's sprite, joined to neighbouring paths/levels when it tiles
 	local open = {}
@@ -665,8 +673,11 @@ function engine.drawlist()
 			local ch = changes[u.className] or {}
 			local root = t.sprite_in_root ~= false
 			if ch.root ~= nil then root = ch.root end
-			add(ch.image or t.sprite or u.className, root, frame,
-				u.values[XPOS], u.values[YPOS], c[1], c[2], u.values[ZLAYER])
+			local x, y, p = u.values[XPOS], u.values[YPOS], engine.prev[u.fixed]
+			if p and math.abs(x - p[1]) <= 1 and math.abs(y - p[2]) <= 1 then -- slide one-tile moves; jumps snap
+				x, y = p[1] + (x - p[1]) * progress, p[2] + (y - p[2]) * progress
+			end
+			add(ch.image or t.sprite or u.className, root, frame, x, y, c[1], c[2], u.values[ZLAYER])
 		end
 	end
 	for id in pairs(engine.blocked) do

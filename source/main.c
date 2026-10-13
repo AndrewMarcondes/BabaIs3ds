@@ -7,6 +7,8 @@
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 #define SAVE_FILE "sdmc:/3ds/baba/save.ini"
 
+#define SLIDE_FRAMES 5 // a move slides over ~80ms, like the original
+
 static uint8_t frame[400 * 240 * 3];
 
 // Top framebuffer is 240x400 column-major, bottom-to-top, BGR8.
@@ -78,9 +80,9 @@ int main(void) {
     u64 t1 = osGetTime();
     if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\nSTART to quit\n");
     else {
-        script_draw(L, frame, 400, 240, 1);
+        script_draw(L, frame, 400, 240, 1, 1);
         u64 t2 = osGetTime();
-        script_draw(L, frame, 400, 240, 1); // second draw: sprites cached, the per-turn cost
+        script_draw(L, frame, 400, 240, 1, 1); // second draw: sprites cached, the per-turn cost
         u64 t3 = osGetTime();
         present();
         int n = snprintf(notice, sizeof notice, "boot %llu+%llums, draw %llu/%llums\n", topen - t0, t1 - topen, t2 - t1, t3 - t2);
@@ -94,6 +96,7 @@ int main(void) {
 
     hidSetRepeatParameters(15, 6);
     int wobble = 1, vblanks = 0, paused = 0, sel = 0;
+    int slide = SLIDE_FRAMES; // frames into the last move's slide animation
     while (aptMainLoop()) {
         hidScanInput();
         u32 down = hidKeysDown(), rep = hidKeysDownRepeat();
@@ -127,6 +130,10 @@ int main(void) {
                 show_status(L);
                 update_music(L);
                 script_sounds(L, play_sound);
+                slide = 0;
+            }
+            if (slide < SLIDE_FRAMES) {
+                slide++;
                 redraw = 1;
             }
             if (++vblanks >= 12) { // ~5 per second, like the original's sprite wobble
@@ -136,7 +143,7 @@ int main(void) {
                 redraw = 1;
             }
             if (redraw) {
-                script_draw(L, frame, 400, 240, wobble);
+                script_draw(L, frame, 400, 240, wobble, (float)slide / SLIDE_FRAMES);
                 present();
             }
         }

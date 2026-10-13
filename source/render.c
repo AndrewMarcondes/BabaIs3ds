@@ -130,14 +130,14 @@ void render_clear(uint8_t *fb) {
     fill(fb, R.ox, R.oy, R.vw * R.ts, R.vh * R.ts, PAL(0, 4));
 }
 
-void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int part, int x, int y, int c1, int c2) {
-    if (x < 1 || y < 1 || x > R.vw || y > R.vh) return;
+void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int part, int x16, int y16, int c1, int c2) {
+    if (x16 < 16 || y16 < 16 || x16 > R.vw * 16 || y16 > R.vh * 16) return;
+    int px = R.ox + (x16 - 16) * R.ts / 16, py = R.oy + (y16 - 16) * R.ts / 16; // top-left pixel
     if (!strcmp(sprite, "#box")) { // solid tile with a 1px gap, for level icons the engine draws itself
-        fill(fb, R.ox + (x - 1) * R.ts + 1, R.oy + (y - 1) * R.ts + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
+        fill(fb, px + 1, py + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
         return;
     }
     if (!strcmp(sprite, "#cross")) { // 2px X over the text of a disabled rule
-        int px = R.ox + (x - 1) * R.ts, py = R.oy + (y - 1) * R.ts;
         for (int i = 1; i < R.ts - 1; i++) {
             fill(fb, px + i, py + i, 2 - (i == R.ts - 2), 1, PAL(c1, c2));
             fill(fb, px + R.ts - 1 - i - (i < R.ts - 2), py + i, 2 - (i == R.ts - 2), 1, PAL(c1, c2));
@@ -154,7 +154,7 @@ void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wob
     const uint8_t *spr = get_image(path, w, R.ts);
     if (!spr) return;
     const uint8_t *c = PAL(c1, c2);
-    int px0 = R.ox + (x - 1) * R.ts + (part == 2 ? R.ts - w : 0), py0 = R.oy + (y - 1) * R.ts;
+    int px0 = px + (part == 2 ? R.ts - w : 0), py0 = py;
     for (int j = 0; j < R.ts; j++)
         for (int i = 0; i < w; i++) {
             const uint8_t *s = spr + (j * w + i) * 4;
