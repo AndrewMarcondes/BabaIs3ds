@@ -117,11 +117,14 @@ local function writesave(t)
 	local gen = (engine.savegen or 0) + 1
 	local data = "#gen=" .. gen .. "\n" .. text .. "#end\n"
 	local path = slotpath(gen)
+	local ms, created = engine_ms or function() return 0 end, false -- TEMP: save timing on hardware
+	local t0 = ms()
 	local f = io.open(path, "r+b")
 	local size = f and f:seek("end") or 0
 	if size < #data then -- first save, or the save outgrew its slot: allocating is slow, so leave room to grow
 		if f then f:close() end
 		size = math.max(SLOT_MIN, #data * 2)
+		created = true
 		f = io.open(path, "wb")
 		if not f then return end
 	end
@@ -129,6 +132,7 @@ local function writesave(t)
 	f:seek("set", 0)
 	f:write(data, string.rep(" ", size - #data))
 	if f:close() then engine.savegen, engine.saved = gen, text end
+	engine.saveprofile = ("save %s %s: %dms"):format(path:match("%.%a$"), created and "created" or "in place", ms() - t0) -- TEMP
 end
 
 -- Saves are written at most once per turn (engine.flushsave), not on every MF_store.
@@ -720,6 +724,7 @@ function engine.status()
 		if engine.won then out[#out + 1] = "" out[#out + 1] = yellow .. "Congratulations!" .. reset end
 	end
 	while #out < 24 do out[#out + 1] = "" end
+	if engine.saveprofile then out[#out] = grey .. engine.saveprofile .. reset end -- TEMP
 	out[#out + 1] = grey .. "D-pad move   A wait/enter   B undo"
 	out[#out + 1] = "X restart   SELECT map   START menu" .. reset
 	return table.concat(out, "\n")
