@@ -10,6 +10,7 @@ end
 
 -- level 1
 assert(generaldata.strings[CURRLEVEL] == "0level", "fresh save should start on level 1, got " .. generaldata.strings[CURRLEVEL])
+assert(engine.music == "baba", "level 1 should play the main theme, got " .. tostring(engine.music))
 local b = find("baba")
 local x0 = b.values[XPOS]
 print("level 1:", #units, "units; rules: " .. rules())
@@ -43,6 +44,7 @@ for i = 1, 30 do
 end
 assert(generaldata.strings[CURRLEVEL] == "106level", "win should return to the map, at " .. generaldata.strings[CURRLEVEL])
 assert(engine.ismap(), "106level should be a map")
+assert(engine.music == "map", "the map should play the map theme, got " .. tostring(engine.music))
 assert(MF_read("save", "baba", "0level") == "3", "win not saved")
 assert(MF_read("save", "baba_prize", "total") == "1", "a first win should count one level clear")
 print("on map; message: " .. engine.message:gsub("\n", " / "))

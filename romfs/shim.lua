@@ -365,6 +365,8 @@ function engine.gotolevel(name)
 	local g = engine.ini.level.general or {}
 	engine.world = generaldata.strings[WORLD]
 	engine.palette = (g.palette or "") ~= "" and g.palette or "default.png"
+	-- shortcut: the default for an empty music= (map theme on maps, main theme in levels) is a guess at the original
+	engine.music = (g.music or "") ~= "" and g.music or (g.leveltype == "1" and "map" or "baba")
 	engine.roomw, engine.roomh = level.w, level.h
 	local im = engine.ini.level.images or {}
 	engine.images = {}

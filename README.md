@@ -3,13 +3,15 @@
 Unofficial 3DS engine for Baba Is You. Ships no game files: you need your own copy of the game.
 
 ## Build
-Needs devkitPro with `3ds-dev 3ds-zlib`.
+Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
 
     make
 
 ## Run
 1. Copy your game's `Data` folder (Mac: `Baba Is You.app/Contents/Resources/Data`) to the SD card as `sdmc:/3ds/baba/Data`.
 2. Copy `baba3ds.3dsx` to `sdmc:/3ds/` and launch from the Homebrew Launcher.
+3. For music, the console's DSP firmware must be at `sdmc:/3ds/dspfirm.cdc` (Luma3DS: Rosalina menu → Miscellaneous
+   options → Dump DSP firmware). Azahar needs the same file in its `sdmc/3ds/` folder.
 
 ## Controls
 D-pad/Circle Pad move, B undo, A wait (in a level) / enter level (on the map), X restart, SELECT back to map, START quit.

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "script.h"
+#include "music.h"
 
 #define DATA_DIR "sdmc:/3ds/baba/Data"
 #define SAVE_FILE "sdmc:/3ds/baba/save.ini"
@@ -21,6 +22,20 @@ static void present(void) {
         }
 }
 
+// Starts the shim's chosen track when it changes: the world's Music folder first, then Data/Music.
+static void update_music(lua_State *L) {
+    static char last[64];
+    const char *name = script_string(L, "music");
+    if (!strcmp(name, last)) return;
+    snprintf(last, sizeof last, "%s", name);
+    char path[256];
+    snprintf(path, sizeof path, DATA_DIR "/Worlds/%s/Music/%s.ogg", script_string(L, "world"), name);
+    FILE *f = fopen(path, "rb");
+    if (f) fclose(f);
+    else snprintf(path, sizeof path, DATA_DIR "/Music/%s.ogg", name);
+    music_play(path);
+}
+
 // Reprints the help plus the shim's message (level name, "Cleared: ...") when the message changes.
 static void show_message(lua_State *L) {
     static char last[256] = "\x01";
@@ -36,6 +51,7 @@ int main(void) {
     consoleInit(GFX_BOTTOM, NULL);
     romfsInit();
     printf(HELP);
+    int audio = !music_init();
 
     u64 t0 = osGetTime();
     lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua", SAVE_FILE);
@@ -50,6 +66,8 @@ int main(void) {
         present();
         show_message(L);
         printf("boot %llums, first draw %llums, draw %llums\n", t1 - t0, t2 - t1, t3 - t2);
+        if (!audio) printf("no audio: needs sdmc:/3ds/dspfirm.cdc\n");
+        update_music(L);
     }
 
     hidSetRepeatParameters(15, 6);
@@ -67,6 +85,7 @@ int main(void) {
             if (key) {
                 script_input(L, key);
                 show_message(L);
+                update_music(L);
                 redraw = 1;
             }
             if (++vblanks >= 12) { // ~5 per second, like the original's sprite wobble
@@ -84,6 +103,7 @@ int main(void) {
         gfxSwapBuffers();
         gspWaitForVBlank();
     }
+    music_exit();
     if (L) lua_close(L);
     romfsExit();
     gfxExit();

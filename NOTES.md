@@ -47,7 +47,9 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   this map; a map is cleared at `unlockcount` cleared levels. The original's gate animation (gateunlock, MF_findgates,
   COMPLETED < -1 gate objects) is skipped: a met gate path is just saved open. Verify against the real game when possible.
 - Unlock animation.
-- Sound, music.
+- Music: .ld music= track from Worlds/<w>/Music or Data/Music, streamed by source/music.c (tremor + ndsp).
+  Empty music= defaults to map/baba (a guess). Sound effects: only one file in Data/Sounds; the rest are probably
+  packed in the game binary and need extracting.
 - Animation: walk frame = VISUALDIR (movement.lua advances it), `animate()` turns it into unit.direction (DIR*8+VISUALDIR for tiling 2/3,
   VISUALDIR for 4). Engine calls animate() after turns and on a ~200ms timer; all sprites also wobble through _1/_2/_3 files on that timer.
 - Object overrides: per changed object MF_create + addchange + MF_cleanremove before units; addunit applies (dochanges). Sprite = changes[class].image/root.
