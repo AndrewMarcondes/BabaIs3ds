@@ -13,6 +13,8 @@ Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
        python3 tools/prepare_sd.py "<...>/Baba Is You.app" "/Volumes/<SD card>/3ds/baba"
 
    On a Steam install the app is at `~/Library/Application Support/Steam/steamapps/common/Baba Is You/Baba Is You.app`.
+   Add `--small-audio` (needs `brew install vorbis-tools`) to re-encode music and sound effects smaller:
+   ~100 MB -> ~60 MB in total, and less work for the 3DS to decode.
    This copies the game's data, packs the ~4,400 sprite files into one `sprites.pak` (much faster and smaller on an
    SD card) and extracts the sound effects. Nothing from the game is in this repository; the tool only rearranges
    files you already own. (Copying `Data` by hand to `sdmc:/3ds/baba/Data` also works, just slower and without
