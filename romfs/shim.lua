@@ -44,11 +44,15 @@ end
 ---------------------------------------------------------------- storage (MF_read / MF_store)
 
 function engine.readini(path)
-	local t, sec = {}, nil
 	local f = io.open(path, "rb")
-	if not f then return t end
+	if not f then return {} end
 	local text = f:read("a") -- one read: map .ld files are large and line-by-line IO is slow on the SD card
 	f:close()
+	return engine.parseini(text)
+end
+
+function engine.parseini(text)
+	local t, sec = {}, nil
 	for line in text:gmatch("[^\r\n]+") do
 		local s = line:match("^%[(.*)%]$")
 		if s then
@@ -62,9 +66,38 @@ function engine.readini(path)
 	return t
 end
 
--- Written to path.tmp then renamed, so a power-off mid-write can't leave a half-written save.
--- Built as one string and written once: each separate write is a slow SD operation on the 3DS.
-local function writeini(path, t)
+-- The save lives in two slots, <savefile>.a and .b, overwritten in place: "#gen=N", the ini text, "#end", padding.
+-- Each write goes to the older slot and loading takes the newest slot with its #end, so a power-off mid-write
+-- loses at most that write. In place matters on the 3DS: closing a newly created/truncated file took ~5s there
+-- (the SD card has to allocate space); rewriting an existing file of the same size doesn't allocate.
+local SLOT_MIN = 16384
+
+local function slotpath(gen) return engine.savefile .. (gen % 2 == 1 and ".a" or ".b") end
+
+local function readslot(path)
+	local f = io.open(path, "rb")
+	if not f then return nil end
+	local text = f:read("a")
+	f:close()
+	local gen, body = text:match("^#gen=(%d+)\n(.-)#end\n")
+	if gen then return tonumber(gen), body end
+end
+
+-- Newest complete slot, or an old single-file save.ini from earlier builds.
+function engine.loadsave()
+	local ga, a = readslot(slotpath(1))
+	local gb, b = readslot(slotpath(2))
+	if ga or gb then
+		local gen, body = ga, a
+		if gb and (not ga or gb > ga) then gen, body = gb, b end
+		engine.savegen, engine.saved = gen, body
+		return engine.parseini(body)
+	end
+	engine.savegen, engine.saved = 0, nil
+	return engine.readini(engine.savefile)
+end
+
+local function initext(t)
 	local out, secs = {}, {}
 	for s in pairs(t) do secs[#secs + 1] = s end
 	table.sort(secs)
@@ -75,21 +108,32 @@ local function writeini(path, t)
 		table.sort(keys)
 		for _, k in ipairs(keys) do out[#out + 1] = k .. "=" .. t[s][k] end
 	end
-	local text = table.concat(out, "\n") .. "\n"
+	return table.concat(out, "\n") .. "\n"
+end
+
+local function writesave(t)
+	local text = initext(t)
 	if text == engine.saved then return end -- unchanged since the last write
-	local tmp = path .. ".tmp"
-	local f = io.open(tmp, "w")
-	if not f then return end
-	f:write(text)
-	if not f:close() then return end
-	os.remove(path) -- FAT (SD card) rename won't replace an existing file
-	os.rename(tmp, path)
-	engine.saved = text
+	local gen = (engine.savegen or 0) + 1
+	local data = "#gen=" .. gen .. "\n" .. text .. "#end\n"
+	local path = slotpath(gen)
+	local f = io.open(path, "r+b")
+	local size = f and f:seek("end") or 0
+	if size < #data then -- first save, or the save outgrew its slot: allocating is slow, so leave room to grow
+		if f then f:close() end
+		size = math.max(SLOT_MIN, #data * 2)
+		f = io.open(path, "wb")
+		if not f then return end
+	end
+	f:setvbuf("full", size) -- one write to the card, not one per 1KB buffer
+	f:seek("set", 0)
+	f:write(data, string.rep(" ", size - #data))
+	if f:close() then engine.savegen, engine.saved = gen, text end
 end
 
 -- Saves are written at most once per turn (engine.flushsave), not on every MF_store.
 function engine.flushsave()
-	if engine.savedirty and engine.savefile then writeini(engine.savefile, engine.ini.save) end
+	if engine.savedirty and engine.savefile then writesave(engine.ini.save) end
 	engine.savedirty = false
 end
 
@@ -378,6 +422,7 @@ function engine.loadlevel(level)
 	updatecolours()
 	startblock()
 	animate()
+	findplayer() -- the original engine calls this after every turn: sets the "no YOU" music state
 	if engine.ismap() then
 		openlevels()
 		engine.mapprogress(g)
@@ -446,7 +491,8 @@ function engine.gotolevel(name)
 	engine.world = generaldata.strings[WORLD]
 	engine.palette = (g.palette or "") ~= "" and g.palette or "default.png"
 	-- shortcut: the default for an empty music= (map theme on maps, main theme in levels) is a guess at the original
-	engine.music = (g.music or "") ~= "" and g.music or (g.leveltype == "1" and "map" or "baba")
+	engine.leveltrack = (g.music or "") ~= "" and g.music or (g.leveltype == "1" and "map" or "baba")
+	engine.music = engine.leveltrack
 	engine.roomw, engine.roomh = level.w, level.h
 	local im = engine.ini.level.images or {}
 	engine.images = {}
@@ -512,11 +558,7 @@ function engine.boot_()
 	generaldata.strings[BASEWORLD] = "baba"
 	generaldata.strings[CURRLEVEL] = ""
 	engine.ini.world = engine.readini(engine.data .. "/Worlds/baba/world_data.txt")
-	if engine.savefile then
-		local f = io.open(engine.savefile, "r")
-		if f then f:close() else os.rename(engine.savefile .. ".tmp", engine.savefile) end -- finish an interrupted save
-	end
-	engine.ini.save = engine.savefile and engine.readini(engine.savefile) or {}
+	engine.ini.save = engine.savefile and engine.loadsave() or {}
 	firstlevel()
 	-- shortcut: the real engine restores the level tree from the save; we only know the start map
 	if #leveltree == 0 then sublevel(generaldata.strings[CURRLEVEL], 0, 0) end
@@ -527,6 +569,12 @@ end
 function MF_restart(instant)
 	MF_playsound("restart")
 	engine.gotolevel(generaldata.strings[CURRLEVEL])
+end
+
+-- findplayer() reports whether anything is YOU: without a player the level music gives way to an ominous drone.
+-- Maps have no YOU (the cursor is SELECT), so they always keep their own track.
+function MF_musicstate(status)
+	engine.music = status == 1 and not engine.ismap() and "noise" or engine.leveltrack
 end
 
 -- block() calls this when a YOU unit is on a WIN unit.
@@ -595,11 +643,13 @@ function engine.input_(key)
 		if undo() == 1 then MF_playsound("undo" .. math.random(1, 5)) end
 		updatecode = 1
 		code()
+		findplayer(true)
 	elseif key ~= "enter" then
 		command(key)
 		block()
 		if key ~= "restart" then turnsounds() end
 		newundo()
+		if key ~= "restart" then findplayer() end -- restart reloads the level, which calls it
 	end
 
 	animate()

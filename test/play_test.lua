@@ -11,6 +11,15 @@ end
 -- level 1
 assert(generaldata.strings[CURRLEVEL] == "0level", "fresh save should start on level 1, got " .. generaldata.strings[CURRLEVEL])
 assert(engine.music == "baba", "level 1 should play the main theme, got " .. tostring(engine.music))
+-- no YOU: the game's findplayer() asks for the drone; YOU again: back to the level track
+local you = {}
+for _, f in ipairs(features) do if f[1][3] == "you" then you[#you + 1] = f end end
+for _, f in ipairs(you) do for i, g in ipairs(features) do if g == f then table.remove(features, i) break end end end
+featureindex["you"] = nil
+findplayer()
+assert(engine.music == "noise", "with nothing YOU the music should switch to the drone, got " .. tostring(engine.music))
+updatecode = 1 code() findplayer()
+assert(engine.music == "baba", "with YOU back the level music should return")
 local b = find("baba")
 local x0 = b.values[XPOS]
 print("level 1:", #units, "units; rules: " .. rules())

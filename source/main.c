@@ -91,7 +91,8 @@ int main(void) {
         if (f) fclose(f);
         if (!audio) snprintf(notice + n, sizeof notice - n, "no audio: needs sdmc:/3ds/dspfirm.cdc");
         else if (!f) snprintf(notice + n, sizeof notice - n, "no sound effects: see README");
-        snprintf(notice + strlen(notice), sizeof notice - strlen(notice), "\n%s", script_string(L, "profile")); // TEMP
+        snprintf(notice + strlen(notice), sizeof notice - strlen(notice), "\n%s\n%s", script_string(L, "profile"),
+                 script_string(L, "saveprofile")); // TEMP
         show_status(L);
         update_music(L);
     }
