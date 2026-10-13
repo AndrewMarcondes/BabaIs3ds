@@ -43,7 +43,8 @@ static int run_dir(lua_State *L, const char *dir, const char **first, int nfirst
     struct dirent *e;
     while ((e = readdir(d)) && n < 128) {
         size_t len = strlen(e->d_name);
-        if (len > 4 && !strcmp(e->d_name + len - 4, ".lua")) names[n++] = strdup(e->d_name);
+        // skip hidden files: macOS leaves "._name.lua" metadata files on SD cards / FTP uploads
+        if (len > 4 && e->d_name[0] != '.' && !strcmp(e->d_name + len - 4, ".lua")) names[n++] = strdup(e->d_name);
     }
     closedir(d);
     qsort(names, n, sizeof *names, cmp);
