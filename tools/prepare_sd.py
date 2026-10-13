@@ -30,11 +30,14 @@ def reencode(src, out, args):
     """oggdec src | oggenc args -> out (written via a temp file so an interrupted run never leaves half a file)."""
     tmp = out + ".tmp"
     dec = subprocess.Popen(["oggdec", "-Q", "-o", "-", src], stdout=subprocess.PIPE)
-    enc = subprocess.run(["oggenc", "-Q", *args, "-o", tmp, "-"], stdin=dec.stdout)
+    # stderr off: oggenc warns about --downmix on sounds that are already mono; failures still show in the exit code
+    enc = subprocess.run(["oggenc", "-Q", *args, "-o", tmp, "-"], stdin=dec.stdout, stderr=subprocess.DEVNULL)
     dec.stdout.close()
     if dec.wait() or enc.returncode:
         raise RuntimeError(f"re-encoding failed: {src}")
     os.replace(tmp, out)
+    st = os.stat(src)
+    os.utime(out, (st.st_atime, st.st_mtime)) # marks it as encoded from this exact source file
 
 
 def is_music(rel):
@@ -92,9 +95,9 @@ def main(app, dest, small_audio=False):
             extract_sounds.main(app, raw)
             os.makedirs(sounds, exist_ok=True)
             jobs = [(os.path.join(raw, n), os.path.join(sounds, n), SOUND_ARGS) for n in os.listdir(raw)]
-            # music is skipped when an earlier run already encoded it (output newer than the game's file)
+            # music an earlier --small-audio run already encoded carries its source's exact mtime (plain copies don't)
             jobs += [(src, out, MUSIC_ARGS) for src, out in music
-                     if not (os.path.exists(out) and os.path.getmtime(out) >= os.path.getmtime(src))]
+                     if not (os.path.exists(out) and os.path.getmtime(out) == os.path.getmtime(src))]
             with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
                 for f in [pool.submit(reencode, *j) for j in jobs]:
                     f.result()
