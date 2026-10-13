@@ -87,6 +87,29 @@ def main(app, dest, small_audio=False):
         f.writelines(blobs)
     os.replace(tmp, os.path.join(data, "sprites.pak"))
 
+    # [world] level=name for every level: the map needs all its levels' names, and opening dozens of .ld files
+    # on the 3DS SD card is slow (romfs/shim.lua levelname)
+    lines = []
+    for world in sorted(os.listdir(os.path.join(src, "Worlds"))):
+        wdir = os.path.join(src, "Worlds", world)
+        if not os.path.isdir(wdir):
+            continue
+        lines.append(f"[{world}]")
+        for ld in sorted(f for f in os.listdir(wdir) if f.endswith(".ld")):
+            name = None
+            with open(os.path.join(wdir, ld), encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.rstrip("\r\n")
+                    if line.startswith("name="):
+                        name = line[5:]
+                        break
+                    if line.startswith("[") and line != "[general]":
+                        break
+            if name is not None:
+                lines.append(f"{ld[:-3]}={name}")
+    with open(os.path.join(data, "levelnames.ini"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
     sounds = os.path.join(data, "Sounds")
     if not small_audio:
         extract_sounds.main(app, sounds)

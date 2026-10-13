@@ -63,23 +63,34 @@ function engine.readini(path)
 end
 
 -- Written to path.tmp then renamed, so a power-off mid-write can't leave a half-written save.
+-- Built as one string and written once: each separate write is a slow SD operation on the 3DS.
 local function writeini(path, t)
-	local tmp = path .. ".tmp"
-	local f = io.open(tmp, "w")
-	if not f then return end
-	local secs = {}
+	local out, secs = {}, {}
 	for s in pairs(t) do secs[#secs + 1] = s end
 	table.sort(secs)
 	for _, s in ipairs(secs) do
-		f:write("[", s, "]\n")
+		out[#out + 1] = "[" .. s .. "]"
 		local keys = {}
 		for k in pairs(t[s]) do keys[#keys + 1] = k end
 		table.sort(keys)
-		for _, k in ipairs(keys) do f:write(k, "=", t[s][k], "\n") end
+		for _, k in ipairs(keys) do out[#out + 1] = k .. "=" .. t[s][k] end
 	end
+	local text = table.concat(out, "\n") .. "\n"
+	if text == engine.saved then return end -- unchanged since the last write
+	local tmp = path .. ".tmp"
+	local f = io.open(tmp, "w")
+	if not f then return end
+	f:write(text)
 	if not f:close() then return end
 	os.remove(path) -- FAT (SD card) rename won't replace an existing file
 	os.rename(tmp, path)
+	engine.saved = text
+end
+
+-- Saves are written at most once per turn (engine.flushsave), not on every MF_store.
+function engine.flushsave()
+	if engine.savedirty and engine.savefile then writeini(engine.savefile, engine.ini.save) end
+	engine.savedirty = false
 end
 
 -- storage: level (current .ld), world (world_data.txt), save, settings, lang
@@ -97,7 +108,7 @@ function MF_store(storage, group, item, value)
 	end
 	t[group] = t[group] or {}
 	t[group][item] = tostring(value)
-	if storage == "save" and engine.savefile then writeini(engine.savefile, t) end
+	if storage == "save" then engine.savedirty = true end
 end
 
 function MF_setfile(storage, path) end -- files are chosen by the engine (gotolevel/boot)
@@ -249,9 +260,17 @@ end
 ---------------------------------------------------------------- levels
 
 -- Only [general] name= is needed, and it comes first in .ld files: stop reading there (map loads read dozens).
-local levelnames = {}
+local levelnames
 local function levelname(world, file)
 	local key = world .. "/" .. file
+	if levelnames == nil then
+		-- Data/levelnames.ini (written by tools/prepare_sd.py) has every name in one file: opening dozens of
+		-- .ld files per map load is slow on the 3DS SD card. Without it, fall back to reading each .ld.
+		levelnames = {}
+		for w, names in pairs(engine.readini(engine.data .. "/levelnames.ini")) do
+			for f, n in pairs(names) do levelnames[w .. "/" .. f] = n end
+		end
+	end
 	if levelnames[key] == nil then
 		levelnames[key] = file
 		local f = io.open(engine.data .. "/Worlds/" .. key .. ".ld", "r")
@@ -481,8 +500,10 @@ end
 
 -- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
 function engine.boot()
-	if engine_ms then return profile(engine.boot_) end
-	return engine.boot_()
+	local r
+	if engine_ms then r = profile(engine.boot_) else r = engine.boot_() end
+	engine.flushsave()
+	return r
 end
 function engine.boot_()
 	init(1, 1, 1, 24, 0, 0, 2, 3, 4, 5, 6, 7, 8, 400, 240)
@@ -551,6 +572,11 @@ end
 -- One player input per turn: right/up/left/down/idle/undo/restart from the game's `keys` table,
 -- plus "enter" (enter level on a map, otherwise wait) and "leave" (back to the map).
 function engine.input(key)
+	engine.input_(key)
+	engine.flushsave()
+end
+
+function engine.input_(key)
 	engine.prev = {} -- where units were before this turn, for the slide animation
 	for _, u in ipairs(units) do engine.prev[u.fixed] = { u.values[XPOS], u.values[YPOS] } end
 	if key == "leave" then
@@ -603,6 +629,7 @@ end
 function engine.tick()
 	animate()
 	if engine.won then leavewon() end
+	engine.flushsave()
 end
 
 ---------------------------------------------------------------- bottom screen
