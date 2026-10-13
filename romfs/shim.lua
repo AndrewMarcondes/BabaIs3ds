@@ -6,6 +6,14 @@ engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = 
 local SYSTEM_IDS = 100 -- ids below this are engine/system objects (generaldata etc.) and survive level changes
 local VARS_ID = 9      -- scratch object handed to mapcursor_enter
 
+-- The game forces full collections on every level change (restoredefaults etc.); on the 3DS a full sweep of the
+-- whole script heap is a noticeable pause, so do an incremental step instead. Lua still collects as usual.
+local gc = collectgarbage
+function collectgarbage(opt, ...)
+	if opt == nil or opt == "collect" then return gc("step", 0) end
+	return gc(opt, ...)
+end
+
 -- Fusion alterables default to 0 / "" / false.
 local function defaults(v)
 	return setmetatable({}, { __index = function() return v end })
@@ -37,10 +45,11 @@ end
 
 function engine.readini(path)
 	local t, sec = {}, nil
-	local f = io.open(path, "r")
+	local f = io.open(path, "rb")
 	if not f then return t end
-	for line in f:lines() do
-		line = line:gsub("\r$", "")
+	local text = f:read("a") -- one read: map .ld files are large and line-by-line IO is slow on the SD card
+	f:close()
+	for line in text:gmatch("[^\r\n]+") do
 		local s = line:match("^%[(.*)%]$")
 		if s then
 			sec = s
@@ -50,7 +59,6 @@ function engine.readini(path)
 			if k then t[sec][k] = v end
 		end
 	end
-	f:close()
 	return t
 end
 
@@ -227,12 +235,23 @@ end
 
 ---------------------------------------------------------------- levels
 
+-- Only [general] name= is needed, and it comes first in .ld files: stop reading there (map loads read dozens).
 local levelnames = {}
 local function levelname(world, file)
 	local key = world .. "/" .. file
 	if levelnames[key] == nil then
-		local ld = engine.readini(engine.data .. "/Worlds/" .. key .. ".ld")
-		levelnames[key] = ld.general and ld.general.name or file
+		levelnames[key] = file
+		local f = io.open(engine.data .. "/Worlds/" .. key .. ".ld", "r")
+		if f then
+			local sec
+			for line in f:lines() do
+				sec = line:match("^%[(.-)%]") or sec
+				local v = sec == "general" and line:match("^name=(.-)\r?$")
+				if v then levelnames[key] = v break end
+				if sec and sec ~= "general" then break end
+			end
+			f:close()
+		end
 	end
 	return levelnames[key]
 end

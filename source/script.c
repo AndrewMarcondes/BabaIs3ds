@@ -7,8 +7,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+// luaL_loadfile reads in BUFSIZ (1KB) pieces; one read per file is much cheaper on the SD card.
+static int loadfile(lua_State *L, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return luaL_loadfile(L, path); // let Lua produce the usual error message
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = n > 0 ? malloc(n) : NULL;
+    int ok = buf && fread(buf, 1, n, f) == (size_t)n;
+    fclose(f);
+    if (!ok) { free(buf); return luaL_loadfile(L, path); }
+    char name[300];
+    snprintf(name, sizeof name, "@%s", path);
+    int r = luaL_loadbuffer(L, buf, n, name);
+    free(buf);
+    return r;
+}
+
 static int run(lua_State *L, const char *path) {
-    if (luaL_dofile(L, path) == LUA_OK) return 0;
+    if (loadfile(L, path) == LUA_OK && lua_pcall(L, 0, LUA_MULTRET, 0) == LUA_OK) return 0;
     printf("lua: %s\n", lua_tostring(L, -1));
     lua_pop(L, 1);
     return -1;

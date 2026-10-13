@@ -61,6 +61,7 @@ int main(void) {
 
     u64 t0 = osGetTime();
     lua_State *L = script_open(DATA_DIR, "romfs:/shim.lua", SAVE_FILE);
+    u64 topen = osGetTime();
     int ok = L && !script_start(L);
     u64 t1 = osGetTime();
     if (!ok) printf("Copy the game's Data folder to\n" DATA_DIR "\n");
@@ -71,7 +72,7 @@ int main(void) {
         u64 t3 = osGetTime();
         present();
         show_message(L);
-        printf("boot %llums, first draw %llums, draw %llums\n", t1 - t0, t2 - t1, t3 - t2);
+        printf("scripts %llums, start %llums, first draw %llums, draw %llums\n", topen - t0, t1 - topen, t2 - t1, t3 - t2);
         if (!audio) printf("no audio: needs sdmc:/3ds/dspfirm.cdc\n");
         else {
             FILE *f = fopen(DATA_DIR "/Sounds/pop1.ogg", "rb");
