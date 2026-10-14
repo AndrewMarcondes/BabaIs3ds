@@ -1,6 +1,9 @@
 # baba3ds
 
-Unofficial 3DS engine for Baba Is You. Ships no game files: you need your own copy of the game.
+Unofficial 3DS engine for Baba Is You. It runs the game's own scripts and levels from **your own copy**
+of the game (the Mac Steam version); this repository contains no game files.
+
+Not affiliated with or endorsed by Hempuli Oy. Baba Is You is © Hempuli Oy; please buy the game.
 
 ## Build
 Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
@@ -66,3 +69,7 @@ Emulator screenshot (Azahar running with RPC server enabled; copy AzaharRPC.py f
 Lua 5.3.4 is vendored in `lua/` (MIT, see lua/LICENSE).
 
 Reverse-engineering notes: NOTES.md.
+
+## License
+MIT (see LICENSE) for this project's code and art; Lua 5.3.4 in `lua/` is MIT too (`lua/LICENSE`).
+Baba Is You itself is not included and not covered.

@@ -5,7 +5,7 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 ## Engine
 - Mac binary is `Contents/MacOS/Chowdren` (Clickteam Fusion game translated to C++ by Chowdren).
 - Embedded Lua is **5.3.4**. All game logic is plain `.lua` in `Data/` (~29k lines core, plus `Editor/`).
-- Lua ↔ engine boundary: `MF_*` functions (`tools/mf_used.tsv` = called by scripts with counts, 157; `tools/mf_binary.txt` = names in binary, 199)
+- Lua ↔ engine boundary: `MF_*` functions (157 called by the scripts; the game's Data/MF_documentation.txt describes most)
   plus `mmf.newObject(id)` (269 calls) returning objects with `.values`, `.strings`, `.flags` tables (e.g. `generaldata.values[...]`).
 - Names used in scripts but not found as strings in binary: MF_alert, MF_bonus, MF_debug, MF_getprofileID, MF_intro, MF_keyid, MF_store. Find where they come from before stubbing.
 
