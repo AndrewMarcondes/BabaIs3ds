@@ -616,6 +616,9 @@ function engine.input(key)
 end
 
 function engine.input_(key)
+	-- The game marks units it creates/converts so they change only once per turn; the original engine clears
+	-- the mark between turns (MF_update). Without this, something that transformed once never could again.
+	for _, u in ipairs(units) do u.flags[CONVERTED] = false end
 	engine.prev = {} -- where units were before this turn, for the slide animation
 	for _, u in ipairs(units) do engine.prev[u.fixed] = { u.values[XPOS], u.values[YPOS] } end
 	if key == "leave" then

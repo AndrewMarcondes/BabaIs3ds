@@ -56,6 +56,7 @@ Progress is saved to `sdmc:/3ds/baba/save.ini`.
     build-host/script_test <path to Data>    # runs test/play_test.lua: level 1, win, map, enter level 2, leave
     build-host/script_test <path to Data> test/sweep_test.lua     # loads and plays a few turns of every level
     build-host/script_test <path to Data> test/progress_test.lua  # gates and map clears
+    build-host/script_test <path to Data> test/convert_test.lua   # things that transformed can transform again
     build-host/render_test <path to Data> out.ppm [save.ini] [keys...] ["=100level"]  # boot with a save, play keys or jump to a level, render
 
 Emulator screenshot (Azahar running with RPC server enabled; copy AzaharRPC.py from Azahar's scripting/ folder into tools/):
