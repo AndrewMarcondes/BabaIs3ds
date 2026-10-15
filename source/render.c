@@ -236,3 +236,32 @@ void render_image(uint8_t *fb, const char *name) {
             for (int k = 0; k < 3; k++) d[k] = (d[k] * (255 - s[3]) + s[k] * s[3]) / 255;
         }
 }
+
+// The level's name in the game's letter sprites, centred on black, wrapped to the room width.
+void render_card(uint8_t *fb, const char *name, int wobble) {
+    int vw = R.vw, vh = R.vh;
+    memset(fb, 0, R.fbw * R.fbh * 3);
+    char lines[4][64];
+    int n = 0;
+    lines[0][0] = 0;
+    for (const char *w = name; *w && n < 4;) { // greedy word wrap
+        int len = strcspn(w, " ");
+        int cur = strlen(lines[n]);
+        if (cur && cur + 1 + len > vw) { if (++n == 4) break; lines[n][0] = 0; cur = 0; }
+        if (cur) strcat(lines[n], " ");
+        strncat(lines[n], w, len < 60 - cur ? len : 60 - cur);
+        w += len;
+        while (*w == ' ') w++;
+    }
+    int rows = n < 4 ? n + 1 : 4;
+    for (int r = 0; r < rows; r++) {
+        int len = strlen(lines[r]), x = 1 + (vw - len) / 2, y = 1 + (vh - rows) / 2 + r;
+        for (int i = 0; i < len; i++) {
+            char c = lines[r][i], sprite[16];
+            if (c >= 'A' && c <= 'Z') c += 32;
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) continue; // no sprites for punctuation
+            snprintf(sprite, sizeof sprite, "text_%c", c);
+            render_sprite(fb, sprite, 1, 0, wobble, 0, (x + i) * 16, y * 16, 0, 3);
+        }
+    }
+}

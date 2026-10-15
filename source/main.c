@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "png.h"
+#include "render.h"
 #include "script.h"
 #include "audio.h"
 
@@ -12,6 +13,8 @@
 
 #define SLIDE_MS 80 // a move slides over ~80ms, like the original
 #define TICK_MS 200 // animation tick: sprite wobble and animated objects
+#define CARD_MS 1000 // level start card with the level's name
+#define FADE_MS 300  // fade in after a level change
 
 static uint8_t frame[400 * 240 * 3];
 
@@ -177,6 +180,31 @@ static const char *title_screen(void) {
 
 //---------------------------------------------------------------------------- game
 
+//---------------------------------------------------------------------------- level transitions
+
+// Card (when entering a level) then a fade into the new level; any button skips the card.
+static void transition(lua_State *L, int wobble) {
+    const char *name = script_string(L, "cardname");
+    if (*name) {
+        render_card(frame, name, wobble);
+        present();
+        for (u64 end = osGetTime() + CARD_MS; osGetTime() < end && aptMainLoop();) {
+            wait_frame();
+            hidScanInput();
+            if (hidKeysDown()) break;
+        }
+    }
+    for (u64 start = osGetTime(), t; (t = osGetTime() - start) < FADE_MS && aptMainLoop();) {
+        script_render(frame, wobble, 1);
+        int k = t * 256 / FADE_MS;
+        for (size_t i = 0; i < sizeof frame; i++) frame[i] = frame[i] * k >> 8;
+        present();
+        wait_frame();
+    }
+    script_render(frame, wobble, 1);
+    present();
+}
+
 static const char *pause_items[] = {"Resume", "Restart level", "Return to map", "Title screen", "Quit game"};
 #define PAUSE_ITEMS 5
 
@@ -185,6 +213,9 @@ enum { QUIT, TITLE };
 // Plays until the player quits or goes back to the title screen.
 static int play(lua_State *L) {
     int wobble = 1, paused = 0, sel = 0, sliding = 0;
+    char level[16];
+    snprintf(level, sizeof level, "%s", script_string(L, "levelserial")); // changes whenever a new level loads
+    transition(L, wobble);
     u64 last_tick = osGetTime(), slide_start = 0;
     while (aptMainLoop()) {
         hidScanInput();
@@ -238,7 +269,15 @@ static int play(lua_State *L) {
             if (progress >= 1) progress = 1, sliding = 0;
             redraw = 1;
         }
-        if (refresh) script_refresh(L, frame, 400, 240);
+        if (refresh) {
+            script_refresh(L, frame, 400, 240);
+            if (strcmp(level, script_string(L, "levelserial"))) {
+                snprintf(level, sizeof level, "%s", script_string(L, "levelserial"));
+                transition(L, wobble);
+                last_tick = osGetTime();
+                sliding = redraw = refresh = 0;
+            }
+        }
         if (refresh || redraw) {
             script_render(frame, wobble, progress);
             present();

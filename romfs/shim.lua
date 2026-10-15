@@ -528,6 +528,7 @@ function engine.gotolevel(name)
 	editor.strings[MENU] = "ingame" -- the game's turn sounds only play in this menu state
 	engine.loadlevel(level)
 	engine.message = g.name or name
+	engine.cardname = engine.ismap() and "" or (g.name or name) -- shown on the level start card (C)
 	return true
 end
 
@@ -802,6 +803,19 @@ function engine.drawlist()
 		local o = engine.objects[id]
 		local c = o and o.colour or { 2, 2 }
 		if o and o.visible then add("#cross", true, 0, o.values[XPOS], o.values[YPOS], c[1], c[2], 20) end
+	end
+	if engine.ismap() then -- counters in the top-right corner: levels cleared, then orbs once there are any
+		local w, row = generaldata.strings[WORLD], 1
+		for _, c in ipairs({ { "flower", savenum(w .. "_prize", "total") }, { "orb", savenum(w .. "_bonus", "total") } }) do
+			if c[2] > 0 or c[1] == "flower" then
+				local digits = tostring(c[2])
+				local x = roomsizex - 2 - #digits -- icon, then one tile per digit, ending at the right edge
+				for i = 0, #digits do add("#box", true, 0, x + i, row, 0, 4, 30) end
+				add(c[1], true, 0, x, row, 2, 4, 31)
+				for i = 1, #digits do add("text_" .. digits:sub(i, i), true, 0, x + i, row, 0, 3, 31) end
+				row = row + 1
+			end
+		end
 	end
 	-- stable by layer, then insertion order
 	for i, e in ipairs(list) do e.order = i end

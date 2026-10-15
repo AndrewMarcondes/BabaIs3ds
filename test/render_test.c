@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../source/script.h"
+#include "../source/render.h"
 
 int main(int argc, char **argv) {
     if (argc < 3) { fprintf(stderr, "usage: %s <Data dir> <out.ppm> [save.ini] [keys, =level, ~progress...]\n", argv[0]); return 2; }
@@ -22,8 +23,10 @@ int main(int argc, char **argv) {
     }
     static uint8_t fb[400 * 240 * 3], first[400 * 240 * 3];
     script_draw(L, fb, 400, 240, 1, progress);
+    if (getenv("BABA_CARD")) render_card(fb, script_string(L, "cardname"), 1); // the level start card instead
     memcpy(first, fb, sizeof fb);
     script_draw(L, fb, 400, 240, 1, progress); // second draw goes through the cached backdrop
+    if (getenv("BABA_CARD")) render_card(fb, script_string(L, "cardname"), 1);
     if (memcmp(first, fb, sizeof fb)) { fprintf(stderr, "redraw differs from first draw\n"); return 1; }
     printf("%s\n", script_string(L, "message"));
     FILE *f = fopen(argv[2], "wb");
