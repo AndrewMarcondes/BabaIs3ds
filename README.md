@@ -11,7 +11,7 @@ Scan this with **FBI → Remote Install → Scan QR Code** to install the latest
 
 ![QR code: latest baba3ds.cia](meta/install-qr.png)
 
-Then set up the game data on your SD card as described under **Run** below.
+Then set up the game data on your SD card as described under **Run** below. Step one is all that is needed. 
 
 ## Build
 Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
