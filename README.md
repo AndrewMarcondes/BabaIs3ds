@@ -5,10 +5,28 @@ of the game (the Mac Steam version); this repository contains no game files.
 
 Not affiliated with or endorsed by Hempuli Oy. Baba Is You is © Hempuli Oy; please buy the game.
 
+## Install
+Scan this with **FBI → Remote Install → Scan QR Code** to install the latest release
+([baba3ds.cia](https://github.com/AndrewMarcondes/BabaIs3ds/releases/latest/download/baba3ds.cia)):
+
+![QR code: latest baba3ds.cia](meta/install-qr.png)
+
+Then set up the game data on your SD card as described under **Run** below.
+
 ## Build
 Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
 
     make
+
+## Install over Wi-Fi while developing
+`tools/serve_cia.sh` shares your freshly built `baba3ds.cia` on your network (only that file, only while
+it runs) and prints a QR code to scan with FBI's Remote Install.
+
+## Making a release
+`main` holds builds tested on real hardware; new work goes on a branch until tested. To release:
+1. `tools/make_cia.sh` on tested `main`, then on GitHub: Releases → Draft a new release → tag `vX.Y`.
+2. Attach `baba3ds.cia` and `baba3ds.3dsx` with exactly those names (the QR code links to
+   `releases/latest/download/baba3ds.cia`). Never attach game data.
 
 ## Installable .cia (HOME Menu icon)
 Needs [makerom](https://github.com/3DSGuy/Project_CTR/releases) and
