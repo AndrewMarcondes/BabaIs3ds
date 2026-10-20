@@ -722,7 +722,7 @@ end
 
 ---------------------------------------------------------------- drawing
 
--- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile, "#cross" = X,
+-- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile, "#frame" = bordered tile, "#cross" = X,
 -- "@file" = exact sprite file; part 1/2 = left/right half of the tile.
 function engine.drawlist()
 	local list = {}
@@ -766,21 +766,25 @@ function engine.drawlist()
 			if u.values[COMPLETED] >= 1 then
 				local c = u.colour or { 1, 2 }
 				local x, y, n = u.values[XPOS], u.values[YPOS], u.values[VISUALLEVEL]
-				add("#box", true, 0, x, y, c[1], c[2], u.values[ZLAYER])
+				-- like the original: a level still to clear is a dark tile in a border of its colour with a white
+				-- mark, a cleared one a solid tile with a dark mark
+				local cleared = u.values[COMPLETED] == 3
+				local m = cleared and { 0, 4 } or { 0, 3 }
+				add(cleared and "#box" or "#frame", true, 0, x, y, c[1], c[2], u.values[ZLAYER])
 				-- style 0 = number, 1 = letter, 2 = dot, -1 = [icons] entry <number>
 				local icons = engine.ini.level.icons or {}
 				if u.values[VISUALSTYLE] == -1 and icons[n .. "file"] then
 					list[#list] = nil -- icons replace the box
 					add("@" .. icons[n .. "file"], icons[n .. "root"] == "1", 0, x, y, c[1], c[2], u.values[ZLAYER])
 				elseif u.values[VISUALSTYLE] == 0 and n < 10 then
-					add("text_" .. n, true, 0, x, y, 0, 4, u.values[ZLAYER])
+					add("text_" .. n, true, 0, x, y, m[1], m[2], u.values[ZLAYER])
 				elseif u.values[VISUALSTYLE] == 0 and n < 100 then -- two digits, each squeezed into half the tile
-					add("text_" .. n // 10, true, 0, x, y, 0, 4, u.values[ZLAYER], 1)
-					add("text_" .. n % 10, true, 0, x, y, 0, 4, u.values[ZLAYER], 2)
+					add("text_" .. n // 10, true, 0, x, y, m[1], m[2], u.values[ZLAYER], 1)
+					add("text_" .. n % 10, true, 0, x, y, m[1], m[2], u.values[ZLAYER], 2)
 				elseif u.values[VISUALSTYLE] == 1 and n < 26 then
-					add("text_" .. string.char(97 + n), true, 0, x, y, 0, 4, u.values[ZLAYER])
+					add("text_" .. string.char(97 + n), true, 0, x, y, m[1], m[2], u.values[ZLAYER])
 				elseif u.values[VISUALSTYLE] == 2 then
-					add("dot", true, 0, x, y, 0, 4, u.values[ZLAYER])
+					add("dot", true, 0, x, y, m[1], m[2], u.values[ZLAYER])
 				end
 			end
 		elseif t and u.visible then

@@ -197,6 +197,11 @@ void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wob
         fill(fb, px + 1, py + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
         return;
     }
+    if (!strcmp(sprite, "#frame")) { // the same tile, dark inside a 1px border: a level not cleared yet
+        fill(fb, px + 1, py + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
+        fill(fb, px + 2, py + 2, R.ts - 4, R.ts - 4, PAL(0, 4));
+        return;
+    }
     if (!strcmp(sprite, "#cross")) { // 2px X over the text of a disabled rule
         for (int i = 1; i < R.ts - 1; i++) {
             fill(fb, px + i, py + i, 2 - (i == R.ts - 2), 1, PAL(c1, c2));
