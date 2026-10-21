@@ -104,6 +104,12 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Turns with many YOU units (5level after WALL IS YOU): Lua 90-150ms at 804MHz, 400-640ms at 268MHz. The next target.
 - Animation ticks rebuild the draw list only when an animated object shows a new frame (~23% of ticks, test/tick_test.lua).
 - All frames of the sprites on screen are loaded behind the level card: 258 frames in 653ms at 268MHz (5level).
+- Profiling the game's Lua (host, time-based; an instruction-count sampler overstates functions made of many cheap
+  instructions): hasfeature ~25% of a WALL IS YOU turn (~2000 calls), rule rebuilds (code/codecheck) ~70% when the
+  player is text, the rest movement checks, wall tiling (dynamictile) and statusblock. Rule lists are short, so an index
+  of them didn't pay; a lean copy of hasfeature (no string.sub per call, numeric loops) is ~40% faster per call:
+  turns 11-24% faster on the host; on a 3DS at 268MHz normal moves 64 -> 47ms of Lua, WALL IS YOU ~7% (engine.speedups,
+  test/hasfeature_test.lua).
 
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.

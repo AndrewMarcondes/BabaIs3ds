@@ -532,6 +532,62 @@ function engine.gotolevel(name)
 	return true
 end
 
+---------------------------------------------------------------- speedups
+
+-- The game's hasfeature(rule1, rule2, rule3, ...) is called ~2000 times on a turn with many YOU units (~25% of the
+-- turn, NOTES.md), and most of its cost per call is overhead: string.sub on every call, ipairs. This copy does the same
+-- four passes over the same featureindex lists in the same order, testcond included, without that overhead (~40%
+-- faster). Calls without rule3 ("is there any rule1 rule2 ...") go to the game's own function.
+-- test/hasfeature_test.lua plays every level both ways and compares the game state.
+local function fast_hasfeature(game)
+	local istext = setmetatable({}, { __index = function(t, k)
+		local v = string.sub(k, 1, 5) == "text_"
+		t[k] = v
+		return v
+	end })
+
+	local function pass(l, r1, r2, r3, unitid, x, y, checkedconds, ignorebroken)
+		for i = 1, #l do
+			local rules = l[i]
+			local conds = rules[2]
+			if conds[1] ~= "never" then
+				local rule = rules[1]
+				if rule[1] == r1 and rule[2] == r2 and rule[3] == r3
+					and testcond(conds, unitid, x, y, nil, nil, checkedconds, ignorebroken) then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	return function(rule1, rule2, rule3, unitid, x, y, checkedconds, ignorebroken_)
+		if rule1 == nil or rule2 == nil or rule3 == nil then
+			return game(rule1, rule2, rule3, unitid, x, y, checkedconds, ignorebroken_)
+		end
+		local ignorebroken = false
+		if ignorebroken_ ~= nil then ignorebroken = ignorebroken_ end
+		local fi = featureindex
+		local t = fi["text"]
+		local l = fi[rule1]
+		if l and pass(l, rule1, rule2, rule3, unitid, x, y, checkedconds, ignorebroken) then return true end
+		if t and istext[rule1] and pass(t, "text", rule2, rule3, unitid, x, y, checkedconds, ignorebroken) then return true end
+		l = fi[rule3]
+		if l and pass(l, rule1, rule2, rule3, unitid, x, y, checkedconds, ignorebroken) then return true end
+		if t and istext[rule3] and pass(t, rule1, rule2, "text", unitid, x, y, checkedconds, ignorebroken) then return true end
+		return nil
+	end
+end
+
+-- Replaces game functions with faster ones that behave the same. Called after the game's scripts load and before
+-- mods, so a mod's own version of a function still wins. engine.game keeps the originals (for the tests).
+function engine.speedups()
+	if engine.game then return end
+	engine.game = { hasfeature = hasfeature }
+	engine.fast = { hasfeature = fast_hasfeature(hasfeature) }
+	hasfeature = engine.fast.hasfeature
+end
+
 -- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
 function engine.boot()
 	local r = engine.boot_()
@@ -547,6 +603,7 @@ function engine.boot_()
 	generaldata.strings[BASEWORLD] = "baba" -- the main game; endings/intro behave differently in other packs
 	generaldata.strings[CURRLEVEL] = ""
 	engine.ini.world = engine.readini(engine.data .. "/Worlds/" .. world .. "/world_data.txt")
+	engine.speedups()
 	-- mods, the way the original loads them: Data/Lua/*.lua always, Worlds/<pack>/Lua/*.lua for that pack
 	setupmods_global()
 	if world ~= "baba" then setupmods_levelpack() end
