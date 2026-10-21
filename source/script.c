@@ -201,7 +201,7 @@ void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
             }
         }
     }
-    if (!render_backdrop_cached(fb)) {
+    if (!render_has_backdrop()) { // composed once per level (only then is fb used)
         render_clear(fb);
         lua_getglobal(L, "engine");
         lua_getfield(L, -1, "images");
@@ -218,29 +218,41 @@ void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
     lua_remove(L, -2);
     nitems = 0;
     if (script_call(L, 0, 1)) return;
-    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part, fromx, fromy, shade }
-    int n = lua_rawlen(L, -1);
-    for (int i = 1; i <= n && nitems < (int)(sizeof items / sizeof *items); i++) {
-        lua_rawgeti(L, -1, i);
-        int v[12];
-        for (int k = 2; k < 12; k++) { lua_rawgeti(L, -1, k + 1); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
-        Item *it = &items[nitems++];
-        lua_rawgeti(L, -1, 2);
-        it->root = lua_toboolean(L, -1);
-        lua_rawgeti(L, -2, 1);
-        snprintf(it->sprite, sizeof it->sprite, "%s", lua_tostring(L, -1));
-        lua_pop(L, 3);
-        it->frame = v[2];
-        it->x = v[3];
-        it->y = v[4];
-        it->c1 = v[5];
-        it->c2 = v[6];
-        it->part = v[8];
-        it->fx = v[9];
-        it->fy = v[10];
-        it->shade = v[11];
-    }
+    // columns (see engine.drawlist): n, draw order, one array per field
+    static const char *fields[] = {"order", "sprite", "root", "frame", "x", "y", "c1", "c2", "part", "fx", "fy", "shade"};
+    enum { ORDER = 1, SPRITE, ROOT, FRAME, X, Y, C1, C2, PART, FX, FY, SHADE }; // stack slots after the list
+    int dl = lua_gettop(L);
+    lua_getfield(L, dl, "n");
+    int n = lua_tointeger(L, -1);
     lua_pop(L, 1);
+    for (int f = 0; f < 12; f++) lua_getfield(L, dl, fields[f]);
+    for (int j = 1; j <= n && nitems < (int)(sizeof items / sizeof *items); j++) {
+        lua_rawgeti(L, dl + ORDER, j);
+        int i = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+        Item *it = &items[nitems++];
+        lua_rawgeti(L, dl + SPRITE, i);
+        snprintf(it->sprite, sizeof it->sprite, "%s", lua_tostring(L, -1));
+        lua_rawgeti(L, dl + ROOT, i);
+        it->root = lua_toboolean(L, -1);
+        lua_pop(L, 2);
+        int v[SHADE + 1];
+        for (int f = FRAME; f <= SHADE; f++) {
+            lua_rawgeti(L, dl + f, i);
+            v[f] = lua_tointeger(L, -1);
+            lua_pop(L, 1);
+        }
+        it->frame = v[FRAME];
+        it->x = v[X];
+        it->y = v[Y];
+        it->c1 = v[C1];
+        it->c2 = v[C2];
+        it->part = v[PART];
+        it->fx = v[FX];
+        it->fy = v[FY];
+        it->shade = v[SHADE];
+    }
+    lua_settop(L, dl - 1);
 }
 
 void script_render(uint8_t *fb, int wobble, float progress) {

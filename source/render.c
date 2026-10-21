@@ -185,6 +185,8 @@ void render_end_level(void) {
     R.backdrop = NULL;
 }
 
+int render_has_backdrop(void) { return R.backdrop != NULL; }
+
 int render_backdrop_cached(uint8_t *fb) {
     if (!R.backdrop) return 0;
 #ifdef __3DS__

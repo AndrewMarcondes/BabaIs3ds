@@ -118,6 +118,12 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   with no collector at all. (The first benchmark's map draw list, 49 vs 22ms, was the new level's backdrop being set up
   in the first timed move, not the collector; the benchmark now sets each level up first.)
 - 268MHz per move now: level 5 Lua 43ms + draw list 34ms + drawing 14ms; wall is you Lua 283ms; main map 16 + 23 + 6.
+- The draw list (engine.drawlist) goes to C as columns reused between frames, ordered with a stable bucket sort by
+  layer; it made a table per item per frame (and five per tiled path on maps) and sorted with a Lua comparison.
+  script_refresh also no longer copies the 288KB backdrop into a CPU buffer the GPU never reads. Checked once against
+  the previous version: identical draw lists on every level (310k lines: start, moves, ticks) and 120 identical host
+  renders (at rest and mid-slide). 3DS at 268MHz, draw list per move: level 5 34 -> 18ms, main map 23 -> 11ms;
+  allocations per move on level 5 94 -> 39KB. Per move at 268MHz now: level 5 ~42 + 18 + 14ms, main map ~16 + 11 + 6ms.
 
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.

@@ -983,23 +983,36 @@ end
 
 ---------------------------------------------------------------- drawing
 
--- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part, fromx, fromy, shade }; sprite "#box" = filled
--- tile, "#cross" = X, "@file" = exact sprite file; part 1/2 = left/right half of the tile;
--- shade = percent to darken (< 0) or lighten (> 0) the colour.
+-- What to draw, for C: engine.drawlist() returns columns, n items with one array per field and the draw order in
+-- .order (by layer, then as added). The arrays are reused from frame to frame; a new table per item per frame, and
+-- sorting with a Lua comparison, were most of the cost of a frame on the 3DS.
+-- Fields: sprite ("#box" = filled tile, "#cross" = X, "@file" = exact sprite file), root, frame, x, y (1/16 tiles),
+-- c1, c2 (palette), layer, part (1/2 = left/right half of the tile), fx, fy (where its last move started, 1/16 tiles;
+-- C slides between them), shade (percent to darken (< 0) or lighten (> 0) the colour).
+local DL_FIELDS = { "sprite", "root", "frame", "x", "y", "c1", "c2", "layer", "part", "fx", "fy", "shade" }
+local dl = { n = 0, order = {} }
+for _, f in ipairs(DL_FIELDS) do dl[f] = {} end
+
+-- shared constants instead of tables made every frame (only read)
+local TILE_COLOUR, LEVEL_COLOUR, CROSS_COLOUR, WHITE = { 0, 3 }, { 1, 2 }, { 2, 2 }, { 0, 3 }
+local NONE = {}
+local NEIGHBOURS = { { 1, 0 }, { 0, -1 }, { -1, 0 }, { 0, 1 } }
+
+local function add(sprite, root, frame, x, y, c1, c2, layer, part, fx, fy, shade)
+	local i = dl.n + 1
+	dl.n = i
+	x, y = x * 16, y * 16
+	dl.sprite[i], dl.root[i], dl.frame[i], dl.x[i], dl.y[i] = sprite, root, frame, x, y
+	dl.c1[i], dl.c2[i], dl.layer[i], dl.part[i] = c1, c2, layer, part
+	dl.fx[i], dl.fy[i], dl.shade[i] = fx and fx * 16 or x, fy and fy * 16 or y, shade
+end
 
 -- Cleared map levels, as shades of each level's own colour so they follow the map's theme
 local LEVEL_CLEARED = -35       -- the tile
 local LEVEL_CLEARED_MARK = -70  -- its number, letter or dot
 
 function engine.drawlist()
-	local list = {}
-	-- positions go to C in 1/16 tiles; e[10], e[11] = where a unit's last move started (C slides between them)
-	local function add(...)
-		local e = { ... }
-		e[4], e[5] = e[4] * 16, e[5] * 16
-		e[10], e[11] = e[10] and e[10] * 16 or e[4], e[11] and e[11] * 16 or e[5]
-		list[#list + 1] = e
-	end
+	dl.n = 0
 
 	-- open paths: the path object's sprite, joined to neighbouring paths/levels when it tiles
 	local open = {}
@@ -1018,11 +1031,11 @@ function engine.drawlist()
 		if p.className == "path" and t then
 			local x, y, frame = p.values[XPOS], p.values[YPOS], 0
 			if t.tiling == 1 then
-				for d, v in ipairs({ { 1, 0 }, { 0, -1 }, { -1, 0 }, { 0, 1 } }) do
+				for d, v in ipairs(NEIGHBOURS) do
 					if open[x + v[1] + (y + v[2]) * roomsizex] then frame = frame | (1 << (d - 1)) end
 				end
 			end
-			local c = t.colour or { 0, 3 }
+			local c = t.colour or TILE_COLOUR
 			add(t.sprite, t.sprite_in_root ~= false, frame, x, y, c[1], c[2], 1)
 		end
 	end
@@ -1031,18 +1044,18 @@ function engine.drawlist()
 		local t = tileslist[u.className]
 		if u.className == "level" then
 			if u.values[COMPLETED] >= 1 then
-				local c = u.colour or { 1, 2 }
+				local c = u.colour or LEVEL_COLOUR
 				local x, y, n = u.values[XPOS], u.values[YPOS], u.values[VISUALLEVEL]
 				-- a level still to clear is its colour with a white mark; a cleared one a darker shade of it with the
 				-- mark darker still (the game's clear colour is often the same as the uncleared one)
 				local cleared = u.values[COMPLETED] == 3
-				local m, ms = { 0, 3 }, 0
+				local m, ms = WHITE, 0
 				if cleared then m, ms = c, LEVEL_CLEARED_MARK end
 				add("#box", true, 0, x, y, c[1], c[2], u.values[ZLAYER], nil, nil, nil, cleared and LEVEL_CLEARED or 0)
 				-- style 0 = number, 1 = letter, 2 = dot, -1 = [icons] entry <number>
-				local icons = engine.ini.level.icons or {}
+				local icons = engine.ini.level.icons or NONE
 				if u.values[VISUALSTYLE] == -1 and icons[n .. "file"] then
-					list[#list] = nil -- icons replace the box
+					dl.n = dl.n - 1 -- icons replace the box
 					add("@" .. icons[n .. "file"], icons[n .. "root"] == "1", 0, x, y, c[1], c[2], u.values[ZLAYER])
 				elseif u.values[VISUALSTYLE] == 0 and n < 10 then
 					add("text_" .. n, true, 0, x, y, m[1], m[2], u.values[ZLAYER], nil, nil, nil, ms)
@@ -1061,8 +1074,8 @@ function engine.drawlist()
 			-- tiling 1 (dynamictiling) and 2/3/4 (animate) keep their sprite frame in unit.direction
 			if tiling == 1 or tiling >= 2 then frame = u.direction
 			elseif tiling == 0 then frame = u.values[DIR] * 8 end
-			local c = u.colour or t.colour or { 0, 3 }
-			local ch = changes[u.className] or {}
+			local c = u.colour or t.colour or TILE_COLOUR
+			local ch = changes[u.className] or NONE
 			local root = t.sprite_in_root ~= false
 			if ch.root ~= nil then root = ch.root end
 			local x, y, p = u.values[XPOS], u.values[YPOS], engine.prev[u.fixed]
@@ -1073,7 +1086,7 @@ function engine.drawlist()
 	end
 	for id in pairs(engine.blocked) do
 		local o = engine.objects[id]
-		local c = o and o.colour or { 2, 2 }
+		local c = o and o.colour or CROSS_COLOUR
 		if o and o.visible then add("#cross", true, 0, o.values[XPOS], o.values[YPOS], c[1], c[2], 20) end
 	end
 	if engine.ismap() then -- counters in the top-right corner: levels cleared, then orbs once there are any
@@ -1089,10 +1102,35 @@ function engine.drawlist()
 			end
 		end
 	end
-	-- stable by layer, then insertion order
-	for i, e in ipairs(list) do e.order = i end
-	table.sort(list, function(a, b) if a[8] ~= b[8] then return a[8] < b[8] end return a.order < b.order end)
-	return list
+
+	-- draw order: by layer, then as added (a stable sort; there are only a few layers)
+	local n, layer, order = dl.n, dl.layer, dl.order
+	local seen, layers = {}, {}
+	for i = 1, n do
+		local l = layer[i]
+		if not seen[l] then seen[l], layers[#layers + 1] = true, l end
+	end
+	table.sort(layers)
+	local j = 0
+	for _, l in ipairs(layers) do
+		for i = 1, n do
+			if layer[i] == l then j = j + 1; order[j] = i end
+		end
+	end
+	return dl
+end
+
+-- The draw list as one table per item ({ sprite, root, frame, x, y, c1, c2, layer, part, fx, fy, shade }), in draw
+-- order: for tests.
+function engine.drawitems()
+	local d = engine.drawlist()
+	local items = {}
+	for j = 1, d.n do
+		local i, e = d.order[j], {}
+		for k, f in ipairs(DL_FIELDS) do e[k] = d[f][i] end
+		items[j] = e
+	end
+	return items
 end
 
 -- Any MF_* not defined yet becomes a stub that counts its calls.

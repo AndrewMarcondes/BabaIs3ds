@@ -21,6 +21,7 @@ void render_image(uint8_t *fb, const char *name);
 // The level backdrop (clear + images) never changes within a level: compose it once, then copy it.
 // render_backdrop_cached copies it into fb and returns 1 if it was saved; render_backdrop_save stores fb as it.
 int render_backdrop_cached(uint8_t *fb);
+int render_has_backdrop(void);
 void render_backdrop_save(const uint8_t *fb);
 // Level start card: the name in the game's letter sprites, centred on black (letters and digits only).
 void render_card(uint8_t *fb, const char *name, int wobble);
