@@ -722,8 +722,14 @@ end
 
 ---------------------------------------------------------------- drawing
 
--- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part }; sprite "#box" = filled tile, "#frame" = bordered tile, "#cross" = X,
--- "@file" = exact sprite file; part 1/2 = left/right half of the tile.
+-- Units in draw order: { sprite, root, frame, x, y, c1, c2, zlayer, part, fromx, fromy, shade }; sprite "#box" = filled
+-- tile, "#cross" = X, "@file" = exact sprite file; part 1/2 = left/right half of the tile;
+-- shade = percent to darken (< 0) or lighten (> 0) the colour.
+
+-- Cleared map levels, as shades of each level's own colour so they follow the map's theme
+local LEVEL_CLEARED = -35       -- the tile
+local LEVEL_CLEARED_MARK = -70  -- its number, letter or dot
+
 function engine.drawlist()
 	local list = {}
 	-- positions go to C in 1/16 tiles; e[10], e[11] = where a unit's last move started (C slides between them)
@@ -766,25 +772,26 @@ function engine.drawlist()
 			if u.values[COMPLETED] >= 1 then
 				local c = u.colour or { 1, 2 }
 				local x, y, n = u.values[XPOS], u.values[YPOS], u.values[VISUALLEVEL]
-				-- like the original: a level still to clear is a dark tile in a border of its colour with a white
-				-- mark, a cleared one a solid tile with a dark mark
+				-- a level still to clear is its colour with a white mark; a cleared one a darker shade of it with the
+				-- mark darker still (the game's clear colour is often the same as the uncleared one)
 				local cleared = u.values[COMPLETED] == 3
-				local m = cleared and { 0, 4 } or { 0, 3 }
-				add(cleared and "#box" or "#frame", true, 0, x, y, c[1], c[2], u.values[ZLAYER])
+				local m, ms = { 0, 3 }, 0
+				if cleared then m, ms = c, LEVEL_CLEARED_MARK end
+				add("#box", true, 0, x, y, c[1], c[2], u.values[ZLAYER], nil, nil, nil, cleared and LEVEL_CLEARED or 0)
 				-- style 0 = number, 1 = letter, 2 = dot, -1 = [icons] entry <number>
 				local icons = engine.ini.level.icons or {}
 				if u.values[VISUALSTYLE] == -1 and icons[n .. "file"] then
 					list[#list] = nil -- icons replace the box
 					add("@" .. icons[n .. "file"], icons[n .. "root"] == "1", 0, x, y, c[1], c[2], u.values[ZLAYER])
 				elseif u.values[VISUALSTYLE] == 0 and n < 10 then
-					add("text_" .. n, true, 0, x, y, m[1], m[2], u.values[ZLAYER])
+					add("text_" .. n, true, 0, x, y, m[1], m[2], u.values[ZLAYER], nil, nil, nil, ms)
 				elseif u.values[VISUALSTYLE] == 0 and n < 100 then -- two digits, each squeezed into half the tile
-					add("text_" .. n // 10, true, 0, x, y, m[1], m[2], u.values[ZLAYER], 1)
-					add("text_" .. n % 10, true, 0, x, y, m[1], m[2], u.values[ZLAYER], 2)
+					add("text_" .. n // 10, true, 0, x, y, m[1], m[2], u.values[ZLAYER], 1, nil, nil, ms)
+					add("text_" .. n % 10, true, 0, x, y, m[1], m[2], u.values[ZLAYER], 2, nil, nil, ms)
 				elseif u.values[VISUALSTYLE] == 1 and n < 26 then
-					add("text_" .. string.char(97 + n), true, 0, x, y, m[1], m[2], u.values[ZLAYER])
+					add("text_" .. string.char(97 + n), true, 0, x, y, m[1], m[2], u.values[ZLAYER], nil, nil, nil, ms)
 				elseif u.values[VISUALSTYLE] == 2 then
-					add("dot", true, 0, x, y, m[1], m[2], u.values[ZLAYER])
+					add("dot", true, 0, x, y, m[1], m[2], u.values[ZLAYER], nil, nil, nil, ms)
 				end
 			end
 		elseif t and u.visible then

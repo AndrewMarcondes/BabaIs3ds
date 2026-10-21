@@ -174,6 +174,7 @@ const char *script_string(lua_State *L, const char *field) {
 typedef struct {
     char sprite[48];
     uint8_t root, part, c1, c2;
+    int8_t shade;
     int16_t frame, x, y, fx, fy; // x/y = where it is now, fx/fy = where the last move started (1/16 tiles)
 } Item;
 static Item items[4096];
@@ -217,12 +218,12 @@ void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
     lua_remove(L, -2);
     nitems = 0;
     if (script_call(L, 0, 1)) return;
-    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part, fromx, fromy }
+    // each entry: { sprite, root, frame, x, y, c1, c2, zlayer, part, fromx, fromy, shade }
     int n = lua_rawlen(L, -1);
     for (int i = 1; i <= n && nitems < (int)(sizeof items / sizeof *items); i++) {
         lua_rawgeti(L, -1, i);
-        int v[11];
-        for (int k = 2; k < 11; k++) { lua_rawgeti(L, -1, k + 1); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
+        int v[12];
+        for (int k = 2; k < 12; k++) { lua_rawgeti(L, -1, k + 1); v[k] = lua_tointeger(L, -1); lua_pop(L, 1); }
         Item *it = &items[nitems++];
         lua_rawgeti(L, -1, 2);
         it->root = lua_toboolean(L, -1);
@@ -237,6 +238,7 @@ void script_refresh(lua_State *L, uint8_t *fb, int fbw, int fbh) {
         it->part = v[8];
         it->fx = v[9];
         it->fy = v[10];
+        it->shade = v[11];
     }
     lua_pop(L, 1);
 }
@@ -246,7 +248,7 @@ void script_render(uint8_t *fb, int wobble, float progress) {
     for (int i = 0; i < nitems; i++) {
         const Item *it = &items[i];
         int x = it->fx + (int)((it->x - it->fx) * progress), y = it->fy + (int)((it->y - it->fy) * progress);
-        render_sprite(fb, it->sprite, it->root, it->frame, wobble, it->part, x, y, it->c1, it->c2);
+        render_sprite(fb, it->sprite, it->root, it->frame, wobble, it->part, x, y, it->c1, it->c2, it->shade);
     }
 }
 

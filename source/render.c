@@ -190,16 +190,19 @@ void render_clear(uint8_t *fb) {
     fill(fb, R.ox, R.oy, R.vw * R.ts, R.vh * R.ts, PAL(0, 4));
 }
 
-void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int part, int x16, int y16, int c1, int c2) {
+// Colour c darkened (shade < 0) or lightened (shade > 0) by |shade| percent, into out.
+static const uint8_t *shaded(const uint8_t *c, int shade, uint8_t *out) {
+    if (!shade) return c;
+    for (int k = 0; k < 3; k++) out[k] = shade < 0 ? c[k] * (100 + shade) / 100 : c[k] + (255 - c[k]) * shade / 100;
+    return out;
+}
+
+void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wobble, int part, int x16, int y16, int c1, int c2, int shade) {
+    uint8_t tmp[3];
     if (x16 < 16 || y16 < 16 || x16 > R.vw * 16 || y16 > R.vh * 16) return;
     int px = R.ox + (x16 - 16) * R.ts / 16, py = R.oy + (y16 - 16) * R.ts / 16; // top-left pixel
     if (!strcmp(sprite, "#box")) { // solid tile with a 1px gap, for level icons the engine draws itself
-        fill(fb, px + 1, py + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
-        return;
-    }
-    if (!strcmp(sprite, "#frame")) { // the same tile, dark inside a 1px border: a level not cleared yet
-        fill(fb, px + 1, py + 1, R.ts - 2, R.ts - 2, PAL(c1, c2));
-        fill(fb, px + 2, py + 2, R.ts - 4, R.ts - 4, PAL(0, 4));
+        fill(fb, px + 1, py + 1, R.ts - 2, R.ts - 2, shaded(PAL(c1, c2), shade, tmp));
         return;
     }
     if (!strcmp(sprite, "#cross")) { // 2px X over the text of a disabled rule
@@ -218,7 +221,7 @@ void render_sprite(uint8_t *fb, const char *sprite, int root, int frame, int wob
     int w = part ? R.ts / 2 : R.ts;
     const uint8_t *spr = get_image(path, w, R.ts);
     if (!spr) return;
-    const uint8_t *c = PAL(c1, c2);
+    const uint8_t *c = shaded(PAL(c1, c2), shade, tmp);
     int px0 = px + (part == 2 ? R.ts - w : 0), py0 = py;
     for (int j = 0; j < R.ts; j++)
         for (int i = 0; i < w; i++) {
@@ -266,7 +269,7 @@ void render_card(uint8_t *fb, const char *name, int wobble) {
             if (c >= 'A' && c <= 'Z') c += 32;
             if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) continue; // no sprites for punctuation
             snprintf(sprite, sizeof sprite, "text_%c", c);
-            render_sprite(fb, sprite, 1, 0, wobble, 0, (x + i) * 16, y * 16, 0, 3);
+            render_sprite(fb, sprite, 1, 0, wobble, 0, (x + i) * 16, y * 16, 0, 3, 0);
         }
     }
 }
