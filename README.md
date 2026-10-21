@@ -24,7 +24,8 @@ it runs) and prints a QR code to scan with FBI's Remote Install.
 
 ## Making a release
 `main` holds builds tested on real hardware; new work goes on a branch until tested. To release:
-1. `tools/make_cia.sh` on tested `main`, then on GitHub: Releases → Draft a new release → tag `vX.Y`.
+1. Set `VERSION` in the Makefile, `tools/make_cia.sh` on tested `main`, then on GitHub: Releases → Draft a new
+   release → tag `v<VERSION>`.
 2. Attach `baba3ds.cia` and `baba3ds.3dsx` with exactly those names (the QR code links to
    `releases/latest/download/baba3ds.cia`). Never attach game data.
 

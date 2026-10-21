@@ -149,7 +149,7 @@ static const char *title_screen(void) {
     int sel = 0, packs = 0, psel = 0;
     show_title_art();
     play_music("baba", "menu");
-    show_list("baba3ds", items, 3, sel, "Up/Down choose   A select");
+    show_list("baba3ds v" VERSION, items, 3, sel, "Up/Down choose   A select");
     while (aptMainLoop()) {
         hidScanInput();
         u32 down = hidKeysDown(), rep = hidKeysDownRepeat();
@@ -158,10 +158,10 @@ static const char *title_screen(void) {
             if (down & KEY_A) return pack_dir[psel];
             if (down & KEY_B) {
                 packs = 0;
-                show_list("baba3ds", items, 3, sel, "Up/Down choose   A select");
+                show_list("baba3ds v" VERSION, items, 3, sel, "Up/Down choose   A select");
             }
         } else {
-            if (list_input(rep, &sel, 3)) show_list("baba3ds", items, 3, sel, "Up/Down choose   A select");
+            if (list_input(rep, &sel, 3)) show_list("baba3ds v" VERSION, items, 3, sel, "Up/Down choose   A select");
             if (down & KEY_A) {
                 if (sel == 0) return "baba";
                 if (sel == 2) return NULL;
@@ -170,7 +170,7 @@ static const char *title_screen(void) {
                     packs = 1;
                     psel = 0;
                     show_list("Level packs & mods", pack_items, npacks, psel, "A play   B back");
-                } else show_list("baba3ds", items, 3, sel, "No level packs in " DATA_DIR "/Worlds\nUp/Down choose   A select");
+                } else show_list("baba3ds v" VERSION, items, 3, sel, "No level packs in " DATA_DIR "/Worlds\nUp/Down choose   A select");
             }
         }
         wait_frame();
