@@ -538,7 +538,7 @@ end
 -- turn, NOTES.md), and most of its cost per call is overhead: string.sub on every call, ipairs. This copy does the same
 -- four passes over the same featureindex lists in the same order, testcond included, without that overhead (~40%
 -- faster). Calls without rule3 ("is there any rule1 rule2 ...") go to the game's own function.
--- test/hasfeature_test.lua plays every level both ways and compares the game state.
+-- test/speedups_test.lua plays every level both ways and compares the game state.
 local function fast_hasfeature(game)
 	local istext = setmetatable({}, { __index = function(t, k)
 		local v = string.sub(k, 1, 5) == "text_"
@@ -579,13 +579,144 @@ local function fast_hasfeature(game)
 	end
 end
 
+-- The game's addundo(line, uid) builds a text of the whole line on every call for a debug message that is commented
+-- out, and makes a table it then replaces; with dozens of units moving that is ~15% of a turn. This copy stores the
+-- same record (the line's fields up to the first nil, newest first). With the game's event log on it calls the game's.
+local function fast_addundo(game)
+	return function(line, uid_)
+		if doundo then
+			if generaldata.flags[LOGGING] and logevents then return game(line, uid_) end
+			local entry = {}
+			for i, v in ipairs(line) do entry[i] = v end
+			table.insert(undobuffer[1], 1, entry)
+		end
+	end
+end
+
+-- The game's dynamictile(unitid, x, y, name, extra) (which frame of a joined-up object like a wall to show) runs for
+-- every wall next to every moving wall and makes two tables per call; ~13% of a WALL IS YOU turn. This copy checks the
+-- same neighbours against the same names in the same order without them. Its frame number is a float when any
+-- neighbour joins (the game adds 2 ^ n), as in the game.
+local function fast_dynamictile(game)
+	local bit = { 2 ^ 0, 2 ^ 1, 2 ^ 2, 2 ^ 3 }
+
+	-- one name from the game's list {name, "edge", "level", extra...}: does it join with what's on tileid?
+	local function joins(uth, d, unitid, tileid)
+		if uth[d] == nil then return false end
+		if d ~= "level" or generaldata.strings[WORLD] == generaldata.strings[BASEWORLD] then return true end
+		if (unitid < 0) or (unitid > 2) then
+			if mmf.newObject(unitid).values[COMPLETED] > 0 then return true end
+		end
+		local umh = unitmap[tileid]
+		if umh ~= nil then
+			for _, f in ipairs(umh) do
+				local funit = mmf.newObject(f)
+				if (funit.strings[UNITNAME] == "level") and (funit.visible and (funit.values[COMPLETED] > 0)) then return true end
+			end
+		end
+		return false
+	end
+
+	return function(unitid, x, y, name, extra_)
+		local result = 0
+		local n = 4
+		if (unitreference[name] ~= nil) and (specialtiling[unitreference[name]] ~= nil) and specialtiling[unitreference[name]] then
+			n = 8
+		end
+		local sdirs = n == 8 and {} or nil -- only handlespecialtiling reads it
+		local sresult, sresult2 = false, false
+		for i = 1, n do
+			local v = dirs_diagonals_[i]
+			local tx, ty = x + v[1], y + v[2]
+			local tileid = tx + ty * roomsizex
+			local uth = unittypeshere[tileid]
+			local found = false
+			if (uth ~= nil) and inbounds(tx, ty) then
+				found = joins(uth, name, unitid, tileid) or joins(uth, "edge", unitid, tileid) or joins(uth, "level", unitid, tileid)
+				if not found and extra_ ~= nil then
+					for _, d in ipairs(extra_) do
+						if joins(uth, d, unitid, tileid) then found = true; break end
+					end
+				end
+			end
+			local edge = (tx == 0) or (ty == 0) or (tx == roomsizex - 1) or (ty == roomsizey - 1)
+			if sdirs then sdirs[i] = 0 end
+			if found or edge then
+				if sdirs then sdirs[i] = 1 end
+				if i < 5 then result = result + bit[i] else sresult = true end
+			end
+		end
+		if sresult then
+			result = handlespecialtiling(sdirs, result)
+			if result > 31 then
+				sresult2 = true
+				result = result % 32
+			end
+		end
+		return result, sresult2
+	end
+end
+
+-- The game's findfeature(rule1, rule2, rule3) copies every candidate rule into new tables and builds up to three strings
+-- per candidate to compare with "rule1 rule2 rule3" (~11% of a WALL IS YOU turn). This copy takes the same candidates
+-- from the same lists in the same order and makes the same string comparisons, building a string only when its length
+-- can match. Calls with only rule2 ("any rule with this verb") go to the game's own function.
+local function fast_findfeature(game)
+	-- the game compares words[3], words[2] .. " " .. words[3] and the three words joined with the request
+	local function matches(w1, w2, w3, rule, n)
+		if w1 == nil or w2 == nil or w3 == nil then return false end -- the game skips rules with fewer than 3 words
+		if w3 == rule then return true end
+		if type(w1) ~= "string" or type(w2) ~= "string" or type(w3) ~= "string" then
+			return (w2 .. " " .. w3) == rule or (w1 .. " " .. w2 .. " " .. w3) == rule
+		end
+		local l2, l3 = #w2, #w3
+		if l2 + 1 + l3 == n and (w2 .. " " .. w3) == rule then return true end
+		return #w1 + 2 + l2 + l3 == n and (w1 .. " " .. w2 .. " " .. w3) == rule
+	end
+
+	return function(rule1, rule2, rule3)
+		if rule1 == nil and rule3 == nil then return game(rule1, rule2, rule3) end
+		local rule = ""
+		if rule1 ~= nil then rule = rule1 .. " " end
+		if rule2 ~= nil then rule = rule .. rule2 .. " " end
+		if rule3 ~= nil then rule = rule .. rule3 end
+		local n = #rule
+		local result
+		local fi = featureindex
+		local l1 = fi[rule1]
+		if l1 ~= nil then
+			for i = 1, #l1 do
+				local rules = l1[i]
+				local r, conds = rules[1], rules[2]
+				if conds[1] ~= "never" and r[1] == rule1 and r[2] == rule2 and matches(r[1], r[2], r[3], rule, n) then
+					result = result or {}
+					result[#result + 1] = { r[1], conds }
+				end
+			end
+		end
+		local l3 = fi[rule3]
+		if l3 ~= nil and l1 == nil then
+			for i = 1, #l3 do
+				local rules = l3[i]
+				local r, conds = rules[1], rules[2]
+				if conds[1] ~= "never" and r[3] == rule3 and r[2] == rule2 and matches(r[1], r[2], r[3], rule, n) then
+					result = result or {}
+					result[#result + 1] = { r[1], conds }
+				end
+			end
+		end
+		return result
+	end
+end
+
 -- Replaces game functions with faster ones that behave the same. Called after the game's scripts load and before
 -- mods, so a mod's own version of a function still wins. engine.game keeps the originals (for the tests).
 function engine.speedups()
 	if engine.game then return end
-	engine.game = { hasfeature = hasfeature }
-	engine.fast = { hasfeature = fast_hasfeature(hasfeature) }
-	hasfeature = engine.fast.hasfeature
+	engine.game = { hasfeature = hasfeature, addundo = addundo, dynamictile = dynamictile, findfeature = findfeature }
+	engine.fast = { hasfeature = fast_hasfeature(hasfeature), addundo = fast_addundo(addundo),
+		dynamictile = fast_dynamictile(dynamictile), findfeature = fast_findfeature(findfeature) }
+	for name, f in pairs(engine.fast) do _G[name] = f end
 end
 
 -- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
