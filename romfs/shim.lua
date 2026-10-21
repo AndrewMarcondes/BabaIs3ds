@@ -1,7 +1,7 @@
 -- Engine side of the Lua boundary (what Chowdren/Fusion provided). Game objects are plain tables.
 -- MF_* behaviour follows Data/MF_documentation.txt from the game.
 
-engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {}, blocked = {}, prev = {} }
+engine = { objects = {}, missing = {}, nextid = 100, levelserial = 0, message = "", ini = {}, blocked = {}, prevx = {}, prevy = {} }
 
 local SYSTEM_IDS = 100 -- ids below this are engine/system objects (generaldata etc.) and survive level changes
 local VARS_ID = 9      -- scratch object handed to mapcursor_enter
@@ -537,7 +537,10 @@ end
 -- The game's hasfeature(rule1, rule2, rule3, ...) is called ~2000 times on a turn with many YOU units (~25% of the
 -- turn, NOTES.md), and most of its cost per call is overhead: string.sub on every call, ipairs. This copy does the same
 -- four passes over the same featureindex lists in the same order, testcond included, without that overhead (~40%
--- faster). Calls without rule3 ("is there any rule1 rule2 ...") go to the game's own function.
+-- faster). It also returns at once when no rule has the effect at all: every rule is filed under its effect
+-- (addoption and addbaserule always add it to featureindex[effect] and nothing takes it out), so with no
+-- featureindex[rule3] none of the passes could match; most lookups ("is this wall float?") are such misses. Calls
+-- without rule3 ("is there any rule1 rule2 ...") go to the game's own function.
 -- test/speedups_test.lua plays every level both ways and compares the game state.
 local function fast_hasfeature(game)
 	local istext = setmetatable({}, { __index = function(t, k)
@@ -565,9 +568,10 @@ local function fast_hasfeature(game)
 		if rule1 == nil or rule2 == nil or rule3 == nil then
 			return game(rule1, rule2, rule3, unitid, x, y, checkedconds, ignorebroken_)
 		end
+		local fi = featureindex
+		if fi[rule3] == nil and not istext[rule3] then return nil end -- no rule has this effect
 		local ignorebroken = false
 		if ignorebroken_ ~= nil then ignorebroken = ignorebroken_ end
-		local fi = featureindex
 		local t = fi["text"]
 		local l = fi[rule1]
 		if l and pass(l, rule1, rule2, rule3, unitid, x, y, checkedconds, ignorebroken) then return true end
@@ -727,6 +731,44 @@ local function fast_testcond(game)
 	end
 end
 
+-- The game's hasfeature_count(rule1, rule2, rule3, ...) counts the rules with exactly that target/verb/effect whose
+-- conditions hold, walking the shorter of featureindex[rule1] and featureindex[rule3]. statusblock asks it four times
+-- per unit per turn (is it right/up/left/down?), almost always with no such rules. Same walk and testcond calls,
+-- numeric loop, 0 at once when either list is missing (as the game).
+local function fast_hasfeature_count(game)
+	return function(rule1, rule2, rule3, unitid, x, y, checkedconds)
+		local fi = featureindex
+		local l1, l3 = fi[rule1], fi[rule3]
+		if l1 == nil or l3 == nil or rule2 == nil then return 0 end
+		local l = #l1 < #l3 and l1 or l3
+		local result = 0
+		for i = 1, #l do
+			local v = l[i]
+			local rule = v[1]
+			if rule[1] == rule1 and rule[2] == rule2 and rule[3] == rule3
+				and testcond(v[2], unitid, x, y, nil, nil, checkedconds) then
+				result = result + 1
+			end
+		end
+		return result
+	end
+end
+
+-- The game's brokenblock(ids) asks every unit, every turn, whether it is broken. With no rule making anything broken
+-- (no featureindex.broken: rules are filed under their effect) the answer is always no, and all it can do is clear the
+-- mark of units still marked broken, with an undo entry each; this does just that. Otherwise the game's own function.
+local function fast_brokenblock(game)
+	return function(ids)
+		if featureindex["broken"] ~= nil then return game(ids) end
+		for _, unit in ipairs(ids == nil and units or ids) do
+			if unit.broken == 1 then
+				unit.broken = 0
+				addundo({ "broken", 0, unit.values[ID], unit.strings[UNITNAME] })
+			end
+		end
+	end
+end
+
 -- The game's dynamic(unitid) and dynamicat(x, y) recompute the frames of joined-up objects (walls) around a unit that
 -- moved: the unit and its neighbours at the new place, the neighbours at the old one. When dozens of walls move in one
 -- turn the same walls are recomputed again and again (~210 dynamictile calls for 50 moving walls, ~20% of the turn).
@@ -812,10 +854,12 @@ function engine.speedups()
 	if engine.game then return end
 	local dyn, dynat, begin, finish = deferred_tiling(dynamic, dynamicat)
 	engine.game = { hasfeature = hasfeature, addundo = addundo, dynamictile = dynamictile, findfeature = findfeature,
-		dynamic = dynamic, dynamicat = dynamicat, testcond = testcond }
+		dynamic = dynamic, dynamicat = dynamicat, testcond = testcond, hasfeature_count = hasfeature_count,
+		brokenblock = brokenblock }
 	engine.fast = { hasfeature = fast_hasfeature(hasfeature), addundo = fast_addundo(addundo),
 		dynamictile = fast_dynamictile(dynamictile), findfeature = fast_findfeature(findfeature),
-		dynamic = dyn, dynamicat = dynat, testcond = fast_testcond(testcond) }
+		dynamic = dyn, dynamicat = dynat, testcond = fast_testcond(testcond),
+		hasfeature_count = fast_hasfeature_count(hasfeature_count), brokenblock = fast_brokenblock(brokenblock) }
 	for name, f in pairs(engine.fast) do _G[name] = f end
 	-- a turn defers the tiling calls (with the game's own dynamic/dynamicat installed, nothing is deferred)
 	local input = engine.input_
@@ -976,8 +1020,10 @@ function engine.input_(key)
 	-- The game marks units it creates/converts so they change only once per turn; the original engine clears
 	-- the mark between turns (MF_update). Without this, something that transformed once never could again.
 	for _, u in ipairs(units) do u.flags[CONVERTED] = false end
-	engine.prev = {} -- where units were before this turn, for the slide animation
-	for _, u in ipairs(units) do engine.prev[u.fixed] = { u.values[XPOS], u.values[YPOS] } end
+	-- where units were before this turn, for the slide animation (two maps rather than a table per unit)
+	local px, py = {}, {}
+	for _, u in ipairs(units) do px[u.fixed], py[u.fixed] = u.values[XPOS], u.values[YPOS] end
+	engine.prevx, engine.prevy = px, py
 	if key == "leave" then
 		goup()
 		return
@@ -1186,9 +1232,10 @@ function engine.drawlist()
 			local ch = changes[u.className] or NONE
 			local root = t.sprite_in_root ~= false
 			if ch.root ~= nil then root = ch.root end
-			local x, y, p = u.values[XPOS], u.values[YPOS], engine.prev[u.fixed]
+			local x, y = u.values[XPOS], u.values[YPOS]
+			local px, py = engine.prevx[u.fixed], engine.prevy[u.fixed]
 			local fx, fy = x, y
-			if p and math.abs(x - p[1]) <= 1 and math.abs(y - p[2]) <= 1 then fx, fy = p[1], p[2] end -- slide one-tile moves; jumps snap
+			if px and math.abs(x - px) <= 1 and math.abs(y - py) <= 1 then fx, fy = px, py end -- slide one-tile moves; jumps snap
 			add(ch.image or t.sprite or u.className, root, frame, x, y, c[1], c[2], u.values[ZLAYER], nil, fx, fy)
 		end
 	end

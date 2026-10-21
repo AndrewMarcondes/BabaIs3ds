@@ -134,6 +134,13 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   Lua per move: 268MHz 258 -> 230ms, 804MHz 61 -> 55ms.
 - test/speedups_test.lua takes a world: baba, new_adv (has BROKEN levels, which the main game doesn't use) and museum,
   28656 turns in all. It doesn't compare #undobuffer: a level's starting history depends on what was played before.
+- Ordinary moves (level 5) were ~50% statusblock: per unit a broken check, four right/up/left/down counts, sleep, float.
+  Most are lookups for effects no rule has. Every rule is filed under its effect (addoption/addbaserule), so the fast
+  hasfeature returns at once when featureindex[effect] is missing; lean hasfeature_count and brokenblock (no BROKEN rule:
+  only clear stale marks). The slide positions are two maps instead of a table per unit. Host vs the game's code:
+  level 5 -43%, WALL IS YOU -48%. statusblock itself (two tables per unit) is left: improving it would mean copying a
+  200-line game function into this repo, which keeps no game code. 3DS at 268MHz, Lua per move: level 5 42 -> 32ms,
+  wall is you 230 -> 199ms, main map 16 -> 13ms. Per move now: level 5 ~32 + 18 + 15ms, wall is you ~199 + 18 + 14ms.
 
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.
