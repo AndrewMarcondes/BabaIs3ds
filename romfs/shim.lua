@@ -709,6 +709,24 @@ local function fast_findfeature(game)
 	end
 end
 
+-- The game's testcond(conds, unitid, ...) is called for every rule a lookup finds, mostly rules without conditions
+-- ("wall is stop"). Even then it copies the caller's checkedconds into a new table and builds two strings from the
+-- conditions table (~6% of a WALL IS YOU turn on those two lines alone), and the answer is just: false if there are no
+-- rules at all, otherwise true unless the unit is broken. This copy answers that case directly; real conditions, the
+-- level and empty ids (1, 2), a missing id and the recursion limit go to the game's own function.
+local function fast_testcond(game)
+	return function(conds, unitid, x_, y_, autofail_, limit_, checkedconds_, ignorebroken_, subgroup_)
+		if type(conds) ~= "table" or #conds > 0 or unitid == nil or unitid == 0 or unitid == 1 or unitid == 2
+			or (limit_ or 0) >= 80 then
+			return game(conds, unitid, x_, y_, autofail_, limit_, checkedconds_, ignorebroken_, subgroup_)
+		end
+		if #features == 0 then return false end
+		local broken = mmf.newObject(unitid).broken or 0
+		if ignorebroken_ then broken = 0 end
+		return broken ~= 1
+	end
+end
+
 -- The game's dynamic(unitid) and dynamicat(x, y) recompute the frames of joined-up objects (walls) around a unit that
 -- moved: the unit and its neighbours at the new place, the neighbours at the old one. When dozens of walls move in one
 -- turn the same walls are recomputed again and again (~210 dynamictile calls for 50 moving walls, ~20% of the turn).
@@ -794,10 +812,10 @@ function engine.speedups()
 	if engine.game then return end
 	local dyn, dynat, begin, finish = deferred_tiling(dynamic, dynamicat)
 	engine.game = { hasfeature = hasfeature, addundo = addundo, dynamictile = dynamictile, findfeature = findfeature,
-		dynamic = dynamic, dynamicat = dynamicat }
+		dynamic = dynamic, dynamicat = dynamicat, testcond = testcond }
 	engine.fast = { hasfeature = fast_hasfeature(hasfeature), addundo = fast_addundo(addundo),
 		dynamictile = fast_dynamictile(dynamictile), findfeature = fast_findfeature(findfeature),
-		dynamic = dyn, dynamicat = dynat }
+		dynamic = dyn, dynamicat = dynat, testcond = fast_testcond(testcond) }
 	for name, f in pairs(engine.fast) do _G[name] = f end
 	-- a turn defers the tiling calls (with the game's own dynamic/dynamicat installed, nothing is deferred)
 	local input = engine.input_

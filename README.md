@@ -80,7 +80,7 @@ Progress is saved to `sdmc:/3ds/baba/save.ini`.
     build-host/script_test <path to Data> test/progress_test.lua  # gates and map clears
     build-host/script_test <path to Data> test/convert_test.lua   # things that transformed can transform again
     build-host/script_test <path to Data> test/tick_test.lua      # animation ticks report every change to the picture
-    build-host/script_test <path to Data> test/speedups_test.lua    # the shim's faster game functions play every level the same
+    build-host/script_test <path to Data> test/speedups_test.lua [new_adv|museum]  # faster game functions play every level the same
     build-host/script_test <path to Data> test/bench_test.lua       # the pause menu benchmark leaves the game and save as they were
     build-host/render_test <path to Data> out.ppm [save.ini] [keys...] ["=100level"]  # boot with a save, play keys or jump to a level, render
 

@@ -1,7 +1,7 @@
 -- The shim's faster copies of game functions (engine.speedups) must not change the game: every level of the baba world
 -- is played with the game's own functions and with the fast ones, from the same start and random seed, and the game
 -- state (every unit, the rules, this turn's undo record) is compared after every turn. Also level 5 with WALL IS YOU
--- (50 YOU units).
+-- (50 YOU units). Run it for each pack: script_test <Data> test/speedups_test.lua <world> (new_adv has BROKEN levels).
 local dir = engine.data .. "/Worlds/" .. engine.world
 local p = io.popen('ls "' .. dir .. '"')
 local names = {}
@@ -27,7 +27,7 @@ local function state()
 	for _, f in ipairs(features) do
 		out[#out + 1] = table.concat(f[1], " ") .. "/" .. #f[2]
 	end
-	out[#out + 1] = "undo " .. #undobuffer
+	-- (not #undobuffer: how much history a level starts with depends on what was played before it)
 	for _, line in ipairs(undobuffer[1] or {}) do
 		local f = {}
 		for i, v in ipairs(line) do f[i] = tostring(v) end
@@ -75,7 +75,7 @@ end
 
 local cases = {}
 for _, n in ipairs(names) do cases[#cases + 1] = { n } end
-cases[#cases + 1] = { "5level", wallisyou, "5level (wall is you)" }
+if engine.world == "baba" then cases[#cases + 1] = { "5level", wallisyou, "5level (wall is you)" } end
 
 local fails, turns, tgame, tfast = 0, 0, 0, 0
 for _, c in ipairs(cases) do

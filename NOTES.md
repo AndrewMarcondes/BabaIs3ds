@@ -128,6 +128,12 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   unit they would have touched is recomputed once from the final positions (nothing reads these frames mid-turn; with
   50 moving walls the game recomputed ~210 frames per turn). WALL IS YOU Lua per move: 268MHz 288 -> 258ms, 804MHz
   69 -> 61ms; host -32% vs the game's code. In engine.speedups, so test/speedups_test.lua covers it.
+- testcond with no conditions (most rules) still copied checkedconds and built two strings from the conditions table
+  (~6% of a WALL IS YOU turn on two lines); the answer is just false with no rules at all, else not broken. A lean
+  copy answers that case. Host vs the game's code: WALL IS YOU -41%, text-player levels -15 to -25%. 3DS, WALL IS YOU
+  Lua per move: 268MHz 258 -> 230ms, 804MHz 61 -> 55ms.
+- test/speedups_test.lua takes a world: baba, new_adv (has BROKEN levels, which the main game doesn't use) and museum,
+  28656 turns in all. It doesn't compare #undobuffer: a level's starting history depends on what was played before.
 
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.
