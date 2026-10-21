@@ -671,10 +671,23 @@ end
 
 -- Animation timer (the original engine calls animate() on a timer too): cycles animated objects (tiling 3/4).
 -- shortcut: animate() also re-derives walk frames, which only change on turns; fine since it is idempotent for them
+-- Animation timer step. Returns true if the picture may have changed: an animated object showed a new frame, or a won
+-- level is left after a pause; otherwise C keeps its draw list (the sprites' wobble is drawn by C). Characters are in
+-- animunits too but only change frame when they fall asleep or wake up.
 function engine.tick()
+	local anim, before, changed = animunits or {}, {}, engine.won
+	for i, id in ipairs(anim) do
+		local u = mmf.newObject(id)
+		before[i] = u and u.direction
+	end
 	animate()
+	for i, id in ipairs(anim) do
+		local u = mmf.newObject(id)
+		if not changed and (not u or u.direction ~= before[i]) then changed = true end
+	end
 	if engine.won then leavewon() end
 	engine.flushsave()
+	return changed
 end
 
 ---------------------------------------------------------------- bottom screen

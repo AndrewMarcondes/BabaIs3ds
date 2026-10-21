@@ -259,7 +259,27 @@ void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float 
 
 int script_input(lua_State *L, const char *key) { return engine_call(L, "input", key); }
 
-int script_tick(lua_State *L) { return engine_call(L, "tick", NULL); }
+int script_tick(lua_State *L) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "tick");
+    lua_remove(L, -2);
+    if (script_call(L, 0, 1)) return -1;
+    int changed = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    return changed;
+}
+
+int script_preload(void) {
+    int n = 0;
+    for (int i = 0; i < nitems; i++) {
+        const Item *it = &items[i];
+        if (it->sprite[0] == '#' || it->sprite[0] == '@' || it->part) continue; // boxes, icons, squeezed digits
+        int seen = 0;
+        for (int j = 0; j < i && !seen; j++) seen = items[j].root == it->root && !strcmp(items[j].sprite, it->sprite);
+        if (!seen) n += render_preload(it->sprite, it->root);
+    }
+    return n;
+}
 
 int script_sounds(lua_State *L, void (*play)(const char *name)) {
     lua_getglobal(L, "engine");

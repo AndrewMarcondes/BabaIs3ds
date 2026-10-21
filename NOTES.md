@@ -95,6 +95,16 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
 - Startup after all fixes: ~1.3s scripts + ~0.8s level (was ~27s).
 - Animation must follow the clock (osGetTime), not loop passes: hardware frames take ~22ms.
 
+## GPU drawing and timing (New 3DS, measured 2026-10-21)
+- The top screen is drawn by citro2d: the backdrop as one texture (composed by the CPU once per level), sprites as
+  textures tinted by their palette colour, level tiles as rectangles. The host tests still use the CPU renderer.
+- Pause menu: Fast mode switches 804/268MHz (268MHz with no L2 cache = an Old 3DS stand-in); Timing shows a readout and
+  appends one line per turn to sdmc:/3ds/baba/timing.txt (level key cpu_mhz lua_ms list_ms draw_ms).
+- Per move, median: 804MHz Lua 14ms, draw list 9ms, drawing 3.5ms; 268MHz 64 / 31 / 15ms (~4.3x slower).
+- Turns with many YOU units (5level after WALL IS YOU): Lua 90-150ms at 804MHz, 400-640ms at 268MHz. The next target.
+- Animation ticks rebuild the draw list only when an animated object shows a new frame (~23% of ticks, test/tick_test.lua).
+- All frames of the sprites on screen are loaded behind the level card: 258 frames in 653ms at 268MHz (5level).
+
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.
   setupmods_global() (Data/Lua) and, for packs, setupmods_levelpack() (Worlds/<pack>/Lua) - the game's own

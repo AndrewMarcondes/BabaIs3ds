@@ -16,17 +16,69 @@
 #define CARD_MS 1000 // level start card with the level's name
 #define FADE_MS 300  // fade in after a level change
 
-static uint8_t frame[400 * 240 * 3];
+static uint8_t frame[400 * 240 * 3]; // CPU-composed pictures: title, level card, a new level's backdrop
 
-// Top framebuffer is 240x400 column-major, bottom-to-top, BGR8.
-static void present(void) {
-    u8 *fb = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
-    for (int y = 0; y < 240; y++)
-        for (int x = 0; x < 400; x++) {
-            const u8 *s = frame + (y * 400 + x) * 3;
-            u8 *d = fb + (x * 240 + (239 - y)) * 3;
-            d[0] = s[2]; d[1] = s[1]; d[2] = s[0];
-        }
+//---------------------------------------------------------------------------- timing readout
+
+// Pause menu > Timing: a readout under the status, and one line per turn in TIMING_FILE.
+#define TIMING_FILE "sdmc:/3ds/baba/timing.txt"
+
+static struct {
+    int on;
+    FILE *log;
+    u64 start;                         // start of the current one-second window (us)
+    int frames, ticks;                 // top-screen frames drawn and animation ticks in this window
+    u64 list, draw, wait, tick;        // summed us in this window: draw list from Lua, GPU commands, waiting, ticks
+    u64 turn, turn_list, turn_draw;    // the last turn: Lua, its draw list, its frame
+    int logged;                        // the last turn's line has been written
+    int mhz;                           // CPU speed the last turn ran at (fast mode can change between turns)
+    char key[8], line[160];            // the last turn's key; the readout
+} T;
+
+static int fast = 1, n3ds; // New 3DS 804MHz mode (pause menu > Fast mode)
+
+static u64 now_us(void) { return svcGetSystemTick() / (SYSCLOCK_ARM11 / 1000000); }
+
+static void timing_set(int on) {
+    T.on = on;
+    T.line[0] = 0;
+    if (on && !T.log && (T.log = fopen(TIMING_FILE, "a"))) {
+        setvbuf(T.log, NULL, _IOFBF, 16384); // one SD write now and then, not one per line
+        fprintf(T.log, "# baba3ds v%s on a%s 3DS; per turn: level key cpu_mhz lua_ms list_ms draw_ms\n", VERSION,
+                n3ds ? " New" : "n Old");
+    }
+    if (!on && T.log) {
+        fclose(T.log);
+        T.log = NULL;
+    }
+    T.start = now_us();
+    T.frames = T.ticks = 0;
+    T.list = T.draw = T.wait = T.tick = 0;
+    T.logged = 1; // nothing to log until the next turn
+}
+
+//---------------------------------------------------------------------------- top screen (GPU)
+
+// A full-screen picture from frame (title, level card).
+static void show_picture(void) {
+    render_gpu_begin();
+    render_gpu_canvas(frame);
+    render_gpu_end();
+}
+
+// The level as last fetched by script_refresh; fade = brightness 0..256. Returns the us spent building the frame.
+static u64 draw_level(int wobble, float progress, int fade) {
+    u64 t0 = now_us();
+    render_gpu_begin(); // waits for the previous frame
+    u64 t1 = now_us();
+    if (fade < 256) render_gpu_fade(fade);
+    script_render(NULL, wobble, progress);
+    render_gpu_end();
+    u64 t2 = now_us();
+    T.frames++;
+    T.wait += t1 - t0;
+    T.draw += t2 - t1;
+    return t2 - t1;
 }
 
 static void wait_frame(void) {
@@ -65,6 +117,7 @@ static void show_status(lua_State *L) {
     char text[2048];
     if (script_status(L, text, sizeof text)) return;
     snprintf(text + strlen(text), sizeof text - strlen(text), "\n\x1b[37;2m%s\x1b[0m", notice);
+    if (T.on) snprintf(text + strlen(text), sizeof text - strlen(text), "\n\x1b[36m%s\x1b[0m", T.line);
     if (!strcmp(text, shown)) return;
     snprintf(shown, sizeof shown, "%s", text);
     printf("\x1b[2J\x1b[H%s", text);
@@ -140,7 +193,7 @@ static void show_title_art(void) {
     if (img && w == 400 && h == 240)
         for (int i = 0; i < 400 * 240; i++) memcpy(frame + i * 3, img + i * 4, 3);
     free(img);
-    present();
+    show_picture();
 }
 
 // Returns the level pack to play, or NULL to quit.
@@ -185,30 +238,67 @@ static const char *title_screen(void) {
 // Card (when entering a level) then a fade into the new level; any button skips the card.
 static void transition(lua_State *L, int wobble) {
     const char *name = script_string(L, "cardname");
+    u64 end = osGetTime() + CARD_MS;
     if (*name) {
         render_card(frame, name, wobble);
-        present();
-        for (u64 end = osGetTime() + CARD_MS; osGetTime() < end && aptMainLoop();) {
+        show_picture();
+    }
+    u64 t0 = now_us();
+    int n = script_preload(); // behind the card, which stays up at least CARD_MS
+    if (T.log) fprintf(T.log, "# %s: loaded %d sprite frames in %.0fms\n", script_string(L, "shown"), n, (now_us() - t0) / 1000.0f);
+    if (*name) {
+        for (; osGetTime() < end && aptMainLoop();) {
             wait_frame();
             hidScanInput();
             if (hidKeysDown()) break;
         }
     }
     for (u64 start = osGetTime(), t; (t = osGetTime() - start) < FADE_MS && aptMainLoop();) {
-        script_render(frame, wobble, 1);
-        int k = t * 256 / FADE_MS;
-        for (size_t i = 0; i < sizeof frame; i++) frame[i] = frame[i] * k >> 8;
-        present();
+        draw_level(wobble, 1, t * 256 / FADE_MS);
         wait_frame();
     }
-    script_render(frame, wobble, 1);
-    present();
+    draw_level(wobble, 1, 256);
 }
 
-static const char *pause_items[] = {"Resume", "Restart level", "Return to map", "Title screen", "Quit game"};
-#define PAUSE_ITEMS 5
+enum { P_RESUME, P_RESTART, P_LEAVE, P_FAST, P_TIMING, P_TITLE, P_QUIT, PAUSE_ITEMS };
+
+static void show_pause(int sel) {
+    static char fast_item[32], timing_item[48];
+    snprintf(fast_item, sizeof fast_item, "Fast mode: %s", !n3ds ? "n/a (Old 3DS)" : fast ? "on (804MHz)" : "off (268MHz)");
+    snprintf(timing_item, sizeof timing_item, "Timing: %s", T.on ? "on (logs /3ds/baba/timing.txt)" : "off");
+    const char *items[PAUSE_ITEMS] = {"Resume", "Restart level", "Return to map", fast_item, timing_item, "Title screen", "Quit game"};
+    show_list("Paused", items, PAUSE_ITEMS, sel, "Up/Down choose   A select   B/START back");
+}
 
 enum { QUIT, TITLE };
+
+// Writes the last turn's line, once.
+static void log_turn(lua_State *L) {
+    if (!T.log || T.logged) return;
+    fprintf(T.log, "%s %s %d %.1f %.1f %.1f\n", script_string(L, "shown"), T.key, T.mhz, T.turn / 1000.0f,
+            T.turn_list / 1000.0f, T.turn_draw / 1000.0f);
+    T.logged = 1;
+}
+
+// Ends the readout's one-second window: averages per drawn frame, the last turn, and the CPU mode.
+static void timing_window(lua_State *L, u64 now) {
+    u64 span = now - T.start;
+    if (span < 1000000) return;
+    int f = T.frames ? T.frames : 1;
+    snprintf(T.line, sizeof T.line,
+             "last turn %.1fms Lua, list %.1f, draw %.1f\n"
+             "%d fps: list %.1fms draw %.1f wait %.1f\n"
+             "ticks %.1fms each, fast mode %s",
+             T.turn / 1000.0f, T.turn_list / 1000.0f, T.turn_draw / 1000.0f,
+             (int)(T.frames * 1000000ull / span), T.list / 1000.0f / f, T.draw / 1000.0f / f, T.wait / 1000.0f / f,
+             T.ticks ? T.tick / 1000.0f / T.ticks : 0.0f, !n3ds ? "n/a" : fast ? "on" : "off");
+    T.start = now;
+    T.frames = T.ticks = 0;
+    T.list = T.draw = T.wait = T.tick = 0;
+    show_status(L);
+    static int windows;
+    if (T.log && ++windows % 10 == 0) fflush(T.log); // so closing the app from the HOME menu loses at most 10s
+}
 
 // Plays until the player quits or goes back to the title screen.
 static int play(lua_State *L) {
@@ -223,21 +313,33 @@ static int play(lua_State *L) {
         u64 now = osGetTime();
         const char *key = NULL;
         if (paused) {
-            if (list_input(rep, &sel, PAUSE_ITEMS)) show_list("Paused", pause_items, PAUSE_ITEMS, sel, "Up/Down choose   A select   B/START back");
+            if (list_input(rep, &sel, PAUSE_ITEMS)) show_pause(sel);
             if (down & KEY_A) {
-                if (sel == 3) return TITLE;
-                if (sel == 4) return QUIT;
-                key = sel == 1 ? "restart" : sel == 2 ? "leave" : NULL;
-                paused = 0;
+                if (sel == P_TITLE) return TITLE;
+                if (sel == P_QUIT) return QUIT;
+                if (sel == P_FAST || sel == P_TIMING) { // toggles: stay in the menu
+                    if (sel == P_FAST && n3ds) {
+                        fast = !fast;
+                        osSetSpeedupEnable(fast);
+                        if (T.log) fprintf(T.log, "# fast mode %s\n", fast ? "on" : "off");
+                    }
+                    if (sel == P_TIMING) timing_set(!T.on);
+                    show_pause(sel);
+                } else {
+                    key = sel == P_RESTART ? "restart" : sel == P_LEAVE ? "leave" : NULL;
+                    paused = 0;
+                }
             } else if (down & (KEY_B | KEY_START)) paused = 0;
             if (!paused) {
                 show_status(L);
                 last_tick = now; // the win delay and animations were frozen while paused
+                T.start = now_us(); // nor does the pause count towards the readout
             }
         } else if (down & KEY_START) {
             paused = 1;
             sel = 0;
-            show_list("Paused", pause_items, PAUSE_ITEMS, sel, "Up/Down choose   A select   B/START back");
+            show_pause(sel);
+            if (T.log) fflush(T.log);
         } else {
             // KEY_RIGHT etc. = D-pad or Circle Pad (Azahar maps the keyboard arrows to the Circle Pad)
             key = rep & KEY_RIGHT ? "right" : rep & KEY_UP ? "up" : rep & KEY_LEFT ? "left"
@@ -247,7 +349,14 @@ static int play(lua_State *L) {
         // Animation runs on the clock, not on loop passes: a slow frame on hardware must not stall the wobble.
         int redraw = 0, refresh = 0;
         if (key) {
+            if (T.on) log_turn(L); // the previous turn, if no frame came between (e.g. a level change)
+            u64 t = now_us();
             script_input(L, key);
+            T.turn = now_us() - t;
+            T.turn_list = T.turn_draw = 0;
+            T.logged = 0;
+            T.mhz = n3ds && fast ? 804 : 268;
+            snprintf(T.key, sizeof T.key, "%s", key);
             show_status(L);
             update_music(L);
             script_sounds(L, play_sound);
@@ -257,11 +366,14 @@ static int play(lua_State *L) {
         if (!paused && now - last_tick >= TICK_MS) { // sprite wobble + animated objects, ~5 per second
             last_tick = now;
             wobble = wobble % 3 + 1;
-            script_tick(L); // can change level (leaving after a win)
+            u64 t = now_us();
+            if (script_tick(L)) refresh = 1; // can change level (leaving after a win)
+            T.tick += now_us() - t;
+            T.ticks++;
             show_status(L);
             update_music(L);
             script_sounds(L, play_sound);
-            refresh = 1;
+            redraw = 1; // the wobble moves on even when nothing else changed
         }
         float progress = 1;
         if (sliding) {
@@ -270,7 +382,11 @@ static int play(lua_State *L) {
             redraw = 1;
         }
         if (refresh) {
+            u64 t = now_us();
             script_refresh(L, frame, 400, 240);
+            u64 d = now_us() - t;
+            T.list += d;
+            if (key) T.turn_list = d;
             if (strcmp(level, script_string(L, "levelserial"))) {
                 snprintf(level, sizeof level, "%s", script_string(L, "levelserial"));
                 transition(L, wobble);
@@ -279,8 +395,12 @@ static int play(lua_State *L) {
             }
         }
         if (refresh || redraw) {
-            script_render(frame, wobble, progress);
-            present();
+            u64 d = draw_level(wobble, progress, 256);
+            if (key) T.turn_draw = d;
+        }
+        if (T.on) {
+            if (!key) log_turn(L); // the turn and its first frame are done
+            if (!paused) timing_window(L, now_us());
         }
         wait_frame();
     }
@@ -299,10 +419,18 @@ static void message(const char *text) {
 }
 
 int main(void) {
-    osSetSpeedupEnable(true); // New 3DS: 804MHz + L2 cache instead of 268MHz (homebrew must ask); no-op on old models
+    bool is_new = false;
+    APT_CheckNew3DS(&is_new);
+    n3ds = is_new;
+    osSetSpeedupEnable(fast); // New 3DS: 804MHz + L2 cache instead of 268MHz (homebrew must ask); no-op on old models
     gfxInitDefault();
-    gfxSetDoubleBuffering(GFX_TOP, false);
+    gfxSetDoubleBuffering(GFX_TOP, false); // frames are only drawn when something changes; the last one stays up
     consoleInit(GFX_BOTTOM, NULL);
+    if (render_gpu_init()) {
+        message("Could not start the GPU.");
+        gfxExit();
+        return 0;
+    }
     romfsInit();
     int audio = !music_init();
     hidSetRepeatParameters(15, 6);
@@ -330,8 +458,8 @@ int main(void) {
             continue;
         }
         u64 t2 = osGetTime();
-        script_draw(L, frame, 400, 240, 1, 1);
-        present();
+        script_refresh(L, frame, 400, 240);
+        draw_level(1, 1, 256);
         u64 t3 = osGetTime();
         int n = snprintf(notice, sizeof notice, "scripts %llums, start %llums, draw %llums\n", topen - t0, t2 - t1, t3 - t2);
         FILE *f = fopen(DATA_DIR "/Sounds/pop1.ogg", "rb");
@@ -341,11 +469,13 @@ int main(void) {
         show_status(L);
         update_music(L);
         int next = play(L);
+        timing_set(0); // closes the log; the readout starts again when it's switched on
         lua_close(L);
         if (next == QUIT) break;
     }
     music_exit();
     romfsExit();
+    render_gpu_exit();
     gfxExit();
     return 0;
 }

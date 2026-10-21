@@ -25,8 +25,13 @@ void script_render(uint8_t *fb, int wobble, float progress);
 // Both of the above.
 void script_draw(lua_State *L, uint8_t *fb, int fbw, int fbh, int wobble, float progress);
 
-// Animation timer step (~5 per second): advances animated objects.
+// Animation timer step (~5 per second): advances animated objects. 1 if the picture may have changed (call
+// script_refresh), 0 if only the wobble needs drawing, -1 on error.
 int script_tick(lua_State *L);
+
+// Loads every frame of the sprites in the kept draw list (all directions, animation frames and wobbles), so the first
+// turns of a level don't stop to read them. Returns the number of frames.
+int script_preload(void);
 
 // engine.<field> as a string ("" if unset), e.g. "message".
 const char *script_string(lua_State *L, const char *field);
