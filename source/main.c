@@ -301,13 +301,50 @@ static void timing_window(lua_State *L, u64 now) {
     if (T.log && ++windows % 10 == 0) fflush(T.log); // so closing the app from the HOME menu loses at most 10s
 }
 
+//---------------------------------------------------------------------------- garbage collection
+
+// Lua's garbage collector is stopped and run here instead, between moves: its steps inside a turn made some moves much
+// slower (benchmark, wall is you at 268MHz: worst move 533ms with them, 308ms without). Each loop pass without input
+// gets up to GC_BUDGET_US of steps while there's garbage. Before a move, a full collection if the heap has grown by
+// GC_SLACK_KB since the last finished cycle (holding a direction leaves few passes without input); the live heap is
+// only ~3MB, so that's quick.
+#define GC_BUDGET_US 3000
+#define GC_SLACK_KB (12 * 1024)
+static int gc_live; // heap KB after the last finished cycle
+
+static void gc_full(lua_State *L) {
+    lua_gc(L, LUA_GCCOLLECT, 0);
+    gc_live = lua_gc(L, LUA_GCCOUNT, 0);
+}
+
+static void gc_init(lua_State *L) {
+    lua_gc(L, LUA_GCSTOP, 0); // lua_gc STEP and COLLECT still work; Lua also collects if an allocation fails
+    gc_full(L);
+}
+
+static void gc_idle(lua_State *L) {
+    if (lua_gc(L, LUA_GCCOUNT, 0) < gc_live + 256) return; // little garbage yet
+    u64 end = now_us() + GC_BUDGET_US;
+    while (now_us() < end)
+        if (lua_gc(L, LUA_GCSTEP, 0)) { // a cycle finished
+            gc_live = lua_gc(L, LUA_GCCOUNT, 0);
+            break;
+        }
+}
+
+static void gc_before_move(lua_State *L) {
+    if (lua_gc(L, LUA_GCCOUNT, 0) > gc_live + GC_SLACK_KB) gc_full(L);
+}
+
 //---------------------------------------------------------------------------- benchmark
 
-// Pause menu > Benchmark: plays each scenario of engine.benchmarks (shim) BENCH_REPS times with Lua's garbage collector
-// as usual, then BENCH_REPS_GC times with it paused (to see its share), undoing the moves after every round. Per-move
-// times go to TIMING_FILE and a summary to the bottom screen. B stops it after the current round.
+// Pause menu > Benchmark: plays each scenario of engine.benchmarks (shim) BENCH_REPS times with the garbage collector
+// as in play (BENCH_IDLE passes without input after each move, see gc_idle), then BENCH_REPS_GC times without it (to
+// see its share), undoing the moves after every round. Per-move times go to TIMING_FILE and a summary to the bottom
+// screen. B stops it after the current round.
 #define BENCH_REPS 6
 #define BENCH_REPS_GC 3
+#define BENCH_IDLE 3
 #define BENCH_MOVES 16
 
 static int cmp_float(const void *a, const void *b) {
@@ -361,26 +398,26 @@ static void benchmark(lua_State *L) {
     if (log) fprintf(log, "# benchmark v%s on a%s 3DS at %dMHz: per move lua_ms (mean median max), list_ms, draw_ms\n",
                      VERSION, n3ds ? " New" : "n Old", mhz);
     char summary[1024];
-    int sn = snprintf(summary, sizeof summary, "\x1b[33mBenchmark at %dMHz\x1b[0m (ms of Lua per move,\nmedian: GC on / GC paused)\n\n", mhz);
+    int sn = snprintf(summary, sizeof summary, "\x1b[33mBenchmark at %dMHz\x1b[0m (ms of Lua per move,\nmedian: GC between moves / none)\n\n", mhz);
     engine_do(L, "benchbegin");
     char name[48], moves[BENCH_MOVES][12];
     int n;
     for (int s = 1; !stop && (n = bench_setup(L, s, name, sizeof name, moves)) > 0; s++) {
         float med[2] = {0, 0};
+        script_refresh(L, frame, 400, 240); // sets up the level's backdrop, not part of any move
+        draw_level(1, 1, 256);
         for (int gc = 0; gc < 2 && !stop; gc++) {
             int reps = gc ? BENCH_REPS_GC : BENCH_REPS, k = 0;
             float lua[BENCH_REPS * BENCH_MOVES], list[BENCH_REPS * BENCH_MOVES], draw[BENCH_REPS * BENCH_MOVES];
             float kb = 0;
-            if (gc) {
-                engine_do(L, "fullgc");
-                lua_gc(L, LUA_GCSTOP, 0);
-            }
+            if (gc) gc_full(L);
             for (int r = 0; r < reps && !stop; r++) {
                 printf("\x1b[2J\x1b[HBenchmark: %s\nGC %s, round %d of %d\n\nB stops after this round", name,
-                       gc ? "paused" : "on", r + 1, reps);
+                       gc ? "none" : "between moves", r + 1, reps);
                 for (int m = 0; m < n && aptMainLoop(); m++, k++) {
                     int kb0 = lua_gc(L, LUA_GCCOUNT, 0);
                     u64 t0 = now_us();
+                    if (!gc) gc_before_move(L);
                     script_input(L, moves[m]);
                     u64 t1 = now_us();
                     script_refresh(L, frame, 400, 240);
@@ -389,16 +426,15 @@ static void benchmark(lua_State *L) {
                     lua[k] = (t1 - t0) / 1000.0f;
                     list[k] = (t2 - t1) / 1000.0f;
                     draw[k] = draw_level(1, 1, 256) / 1000.0f;
+                    for (int i = 0; !gc && i < BENCH_IDLE; i++) gc_idle(L);
                 }
                 for (int m = 0; m < n; m++) script_input(L, "undo");
                 script_refresh(L, frame, 400, 240);
+                for (int i = 0; !gc && i < BENCH_IDLE; i++) gc_idle(L);
                 hidScanInput();
                 if ((hidKeysHeld() & KEY_B) || !aptMainLoop()) stop = 1;
             }
-            if (gc) {
-                lua_gc(L, LUA_GCRESTART, 0);
-                engine_do(L, "fullgc");
-            }
+            if (gc) gc_full(L);
             if (!k) break;
             float lmean = mean(lua, k), lmax = 0;
             for (int i = 0; i < k; i++) if (lua[i] > lmax) lmax = lua[i];
@@ -406,7 +442,7 @@ static void benchmark(lua_State *L) {
             med[gc] = lmed;
             if (log) {
                 fprintf(log, "bench \"%s\" GC %s, %d moves: lua %.1f %.1f %.1f, list %.1f, draw %.1f", name,
-                        gc ? "paused" : "on", k, lmean, lmed, lmax, mean(list, k), mean(draw, k));
+                        gc ? "none" : "between moves", k, lmean, lmed, lmax, mean(list, k), mean(draw, k));
                 if (gc) fprintf(log, ", allocates %.0fKB per move", kb / k);
                 fprintf(log, "\n");
             }
@@ -481,6 +517,7 @@ static int play(lua_State *L) {
         if (key) {
             if (T.on) log_turn(L); // the previous turn, if no frame came between (e.g. a level change)
             u64 t = now_us();
+            gc_before_move(L);
             script_input(L, key);
             T.turn = now_us() - t;
             T.turn_list = T.turn_draw = 0;
@@ -532,6 +569,7 @@ static int play(lua_State *L) {
             if (!key) log_turn(L); // the turn and its first frame are done
             if (!paused) timing_window(L, now_us());
         }
+        if (!key) gc_idle(L);
         wait_frame();
     }
     return QUIT;
@@ -587,6 +625,7 @@ int main(void) {
             message(text);
             continue;
         }
+        gc_init(L); // collect only between moves from here on
         u64 t2 = osGetTime();
         script_refresh(L, frame, 400, 240);
         draw_level(1, 1, 256);

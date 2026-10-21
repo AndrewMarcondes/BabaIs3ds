@@ -111,6 +111,13 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   same calls in the same order (test/speedups_test.lua: every level played both ways, 13920 turns, state compared).
   Host: WALL IS YOU turns -24%, normal turns and maps ~20%; when the player is text (168level) the rules rebuild
   (code/codecheck) dominates and is unchanged. 3DS at 268MHz with hasfeature alone: normal moves 64 -> 47ms of Lua.
+- Pause menu > Benchmark (engine.benchmarks): fixed moves, undone between rounds; per-move times in timing.txt.
+- Lua's garbage collector runs only between moves (gc_idle in main.c, up to 3ms per pass without input; a full
+  collection before a move if the heap grew 12MB; the live heap is ~3MB). Its steps inside turns caused the worst moves:
+  wall is you at 268MHz worst 533 -> 297ms, mean 313 -> 284ms; at 804MHz worst 148 -> 72ms. Moves now cost the same as
+  with no collector at all. (The first benchmark's map draw list, 49 vs 22ms, was the new level's backdrop being set up
+  in the first timed move, not the collector; the benchmark now sets each level up first.)
+- 268MHz per move now: level 5 Lua 43ms + draw list 34ms + drawing 14ms; wall is you Lua 283ms; main map 16 + 23 + 6.
 
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.
