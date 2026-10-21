@@ -719,6 +719,66 @@ function engine.speedups()
 	for name, f in pairs(engine.fast) do _G[name] = f end
 end
 
+---------------------------------------------------------------- benchmark
+
+-- Pause menu > Benchmark: C plays each scenario's moves and undoes them several times, timing every move. The moves
+-- were checked not to win (the save is also kept from being written meanwhile), and undo brings back the start.
+local function wallisyou() -- level 5 with the WALL and BABA text swapped: WALL IS YOU (50 YOU units), BABA IS STOP
+	local tw, tb
+	for _, u in ipairs(units) do
+		if u.strings[UNITNAME] == "text_wall" then tw = u end
+		if u.strings[UNITNAME] == "text_baba" then tb = u end
+	end
+	if not (tw and tb) then return end
+	local wx, wy, bx, by = tw.values[XPOS], tw.values[YPOS], tb.values[XPOS], tb.values[YPOS]
+	update(tw.fixed, bx, by, tw.values[DIR])
+	update(tb.fixed, wx, wy, tb.values[DIR])
+	updatecode = 1
+	code()
+	newundo() -- the swap is its own undo step, so undoing the moves stops here
+end
+
+engine.benchmarks = {
+	{ name = "level 5", level = "5level", moves = { "right", "right", "down", "down", "left", "left", "up", "up" } },
+	{ name = "level 5, wall is you", level = "5level", setup = wallisyou,
+		moves = { "right", "left", "up", "down", "right", "left", "up", "down" } },
+	{ name = "main map", level = "106level", moves = { "right", "right", "up", "up", "left", "left", "down", "down" } },
+}
+
+local function copy(t)
+	local c = {}
+	for k, v in pairs(t) do c[k] = type(v) == "table" and copy(v) or v end
+	return c
+end
+
+-- Before the first scenario: the save stays as it is until engine.benchend.
+function engine.benchbegin()
+	engine.benchkeep = { file = engine.savefile, save = engine.ini.save, level = engine.shown }
+	engine.savefile = nil
+	engine.ini.save = copy(engine.ini.save)
+end
+
+-- Sets up scenario i; returns its name and moves, or nil after the last.
+function engine.benchsetup(i)
+	local b = engine.benchmarks[i]
+	if not b then return nil end
+	math.randomseed(1)
+	if not engine.gotolevel(b.level) then return nil end
+	if b.setup then b.setup() end
+	return b.name, b.moves
+end
+
+-- Puts the save back and goes back to the start of the level the player was in.
+function engine.benchend()
+	local k = engine.benchkeep
+	engine.savefile, engine.ini.save, engine.savedirty = k.file, k.save, false
+	engine.benchkeep = nil
+	return engine.gotolevel(k.level)
+end
+
+-- A real full collection (collectgarbage("collect") only does a step, see the top of this file).
+function engine.fullgc() gc("collect") end
+
 -- Starts the game the way the original does: firstlevel() picks level 1 or, once it's won, the map.
 function engine.boot()
 	local r = engine.boot_()

@@ -260,13 +260,14 @@ static void transition(lua_State *L, int wobble) {
     draw_level(wobble, 1, 256);
 }
 
-enum { P_RESUME, P_RESTART, P_LEAVE, P_FAST, P_TIMING, P_TITLE, P_QUIT, PAUSE_ITEMS };
+enum { P_RESUME, P_RESTART, P_LEAVE, P_FAST, P_TIMING, P_BENCH, P_TITLE, P_QUIT, PAUSE_ITEMS };
 
 static void show_pause(int sel) {
     static char fast_item[32], timing_item[48];
     snprintf(fast_item, sizeof fast_item, "Fast mode: %s", !n3ds ? "n/a (Old 3DS)" : fast ? "on (804MHz)" : "off (268MHz)");
     snprintf(timing_item, sizeof timing_item, "Timing: %s", T.on ? "on (logs /3ds/baba/timing.txt)" : "off");
-    const char *items[PAUSE_ITEMS] = {"Resume", "Restart level", "Return to map", fast_item, timing_item, "Title screen", "Quit game"};
+    const char *items[PAUSE_ITEMS] = {"Resume", "Restart level", "Return to map", fast_item, timing_item,
+                                      "Benchmark (1-2 min, restarts level)", "Title screen", "Quit game"};
     show_list("Paused", items, PAUSE_ITEMS, sel, "Up/Down choose   A select   B/START back");
 }
 
@@ -300,9 +301,133 @@ static void timing_window(lua_State *L, u64 now) {
     if (T.log && ++windows % 10 == 0) fflush(T.log); // so closing the app from the HOME menu loses at most 10s
 }
 
+//---------------------------------------------------------------------------- benchmark
+
+// Pause menu > Benchmark: plays each scenario of engine.benchmarks (shim) BENCH_REPS times with Lua's garbage collector
+// as usual, then BENCH_REPS_GC times with it paused (to see its share), undoing the moves after every round. Per-move
+// times go to TIMING_FILE and a summary to the bottom screen. B stops it after the current round.
+#define BENCH_REPS 6
+#define BENCH_REPS_GC 3
+#define BENCH_MOVES 16
+
+static int cmp_float(const void *a, const void *b) {
+    float x = *(const float *)a, y = *(const float *)b;
+    return (x > y) - (x < y);
+}
+
+static float median(float *v, int n) {
+    qsort(v, n, sizeof *v, cmp_float);
+    return n ? (n % 2 ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2) : 0;
+}
+
+static float mean(const float *v, int n) {
+    float s = 0;
+    for (int i = 0; i < n; i++) s += v[i];
+    return n ? s / n : 0;
+}
+
+// engine.<fn>(i): name and moves of benchmark scenario i (from 1); returns the number of moves, 0 after the last.
+static int bench_setup(lua_State *L, int i, char *name, int len, char moves[][12]) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, "benchsetup");
+    lua_remove(L, -2);
+    lua_pushinteger(L, i);
+    if (script_call(L, 1, 2)) return 0;
+    int n = 0;
+    if (lua_isstring(L, -2) && lua_istable(L, -1)) {
+        snprintf(name, len, "%s", lua_tostring(L, -2));
+        for (; n < BENCH_MOVES; n++) {
+            lua_rawgeti(L, -1, n + 1);
+            int ok = lua_isstring(L, -1);
+            if (ok) snprintf(moves[n], 12, "%s", lua_tostring(L, -1));
+            lua_pop(L, 1);
+            if (!ok) break;
+        }
+    }
+    lua_pop(L, 2);
+    return n;
+}
+
+static void engine_do(lua_State *L, const char *fn) {
+    lua_getglobal(L, "engine");
+    lua_getfield(L, -1, fn);
+    lua_remove(L, -2);
+    script_call(L, 0, 0);
+}
+
+static void benchmark(lua_State *L) {
+    FILE *log = T.log ? T.log : fopen(TIMING_FILE, "a");
+    int mhz = n3ds && fast ? 804 : 268, stop = 0;
+    if (log) fprintf(log, "# benchmark v%s on a%s 3DS at %dMHz: per move lua_ms (mean median max), list_ms, draw_ms\n",
+                     VERSION, n3ds ? " New" : "n Old", mhz);
+    char summary[1024];
+    int sn = snprintf(summary, sizeof summary, "\x1b[33mBenchmark at %dMHz\x1b[0m (ms of Lua per move,\nmedian: GC on / GC paused)\n\n", mhz);
+    engine_do(L, "benchbegin");
+    char name[48], moves[BENCH_MOVES][12];
+    int n;
+    for (int s = 1; !stop && (n = bench_setup(L, s, name, sizeof name, moves)) > 0; s++) {
+        float med[2] = {0, 0};
+        for (int gc = 0; gc < 2 && !stop; gc++) {
+            int reps = gc ? BENCH_REPS_GC : BENCH_REPS, k = 0;
+            float lua[BENCH_REPS * BENCH_MOVES], list[BENCH_REPS * BENCH_MOVES], draw[BENCH_REPS * BENCH_MOVES];
+            float kb = 0;
+            if (gc) {
+                engine_do(L, "fullgc");
+                lua_gc(L, LUA_GCSTOP, 0);
+            }
+            for (int r = 0; r < reps && !stop; r++) {
+                printf("\x1b[2J\x1b[HBenchmark: %s\nGC %s, round %d of %d\n\nB stops after this round", name,
+                       gc ? "paused" : "on", r + 1, reps);
+                for (int m = 0; m < n && aptMainLoop(); m++, k++) {
+                    int kb0 = lua_gc(L, LUA_GCCOUNT, 0);
+                    u64 t0 = now_us();
+                    script_input(L, moves[m]);
+                    u64 t1 = now_us();
+                    script_refresh(L, frame, 400, 240);
+                    u64 t2 = now_us();
+                    kb += lua_gc(L, LUA_GCCOUNT, 0) - kb0;
+                    lua[k] = (t1 - t0) / 1000.0f;
+                    list[k] = (t2 - t1) / 1000.0f;
+                    draw[k] = draw_level(1, 1, 256) / 1000.0f;
+                }
+                for (int m = 0; m < n; m++) script_input(L, "undo");
+                script_refresh(L, frame, 400, 240);
+                hidScanInput();
+                if ((hidKeysHeld() & KEY_B) || !aptMainLoop()) stop = 1;
+            }
+            if (gc) {
+                lua_gc(L, LUA_GCRESTART, 0);
+                engine_do(L, "fullgc");
+            }
+            if (!k) break;
+            float lmean = mean(lua, k), lmax = 0;
+            for (int i = 0; i < k; i++) if (lua[i] > lmax) lmax = lua[i];
+            float lmed = median(lua, k);
+            med[gc] = lmed;
+            if (log) {
+                fprintf(log, "bench \"%s\" GC %s, %d moves: lua %.1f %.1f %.1f, list %.1f, draw %.1f", name,
+                        gc ? "paused" : "on", k, lmean, lmed, lmax, mean(list, k), mean(draw, k));
+                if (gc) fprintf(log, ", allocates %.0fKB per move", kb / k);
+                fprintf(log, "\n");
+            }
+        }
+        sn += snprintf(summary + sn, sizeof summary - sn, "%s\n  %.1f / %.1f\n", name, med[0], med[1]);
+    }
+    engine_do(L, "benchend");
+    if (log && log != T.log) fclose(log);
+    else if (log) fflush(log);
+    shown[0] = 0;
+    printf("\x1b[2J\x1b[H%s\n%sWritten to /3ds/baba/timing.txt\n\nPress A", summary, stop ? "(stopped early)\n" : "");
+    while (aptMainLoop()) {
+        hidScanInput();
+        if (hidKeysDown() & (KEY_A | KEY_B | KEY_START)) break;
+        wait_frame();
+    }
+}
+
 // Plays until the player quits or goes back to the title screen.
 static int play(lua_State *L) {
-    int wobble = 1, paused = 0, sel = 0, sliding = 0;
+    int wobble = 1, paused = 0, sel = 0, sliding = 0, benched = 0;
     char level[16];
     snprintf(level, sizeof level, "%s", script_string(L, "levelserial")); // changes whenever a new level loads
     transition(L, wobble);
@@ -325,6 +450,10 @@ static int play(lua_State *L) {
                     }
                     if (sel == P_TIMING) timing_set(!T.on);
                     show_pause(sel);
+                } else if (sel == P_BENCH) {
+                    benchmark(L);
+                    paused = 0;
+                    benched = 1; // it left the player at the start of their level: draw it again
                 } else {
                     key = sel == P_RESTART ? "restart" : sel == P_LEAVE ? "leave" : NULL;
                     paused = 0;
@@ -347,7 +476,8 @@ static int play(lua_State *L) {
                 : down & KEY_X ? "restart" : down & KEY_SELECT ? "leave" : NULL;
         }
         // Animation runs on the clock, not on loop passes: a slow frame on hardware must not stall the wobble.
-        int redraw = 0, refresh = 0;
+        int redraw = 0, refresh = benched;
+        benched = 0;
         if (key) {
             if (T.on) log_turn(L); // the previous turn, if no frame came between (e.g. a level change)
             u64 t = now_us();
