@@ -709,14 +709,104 @@ local function fast_findfeature(game)
 	end
 end
 
+-- The game's dynamic(unitid) and dynamicat(x, y) recompute the frames of joined-up objects (walls) around a unit that
+-- moved: the unit and its neighbours at the new place, the neighbours at the old one. When dozens of walls move in one
+-- turn the same walls are recomputed again and again (~210 dynamictile calls for 50 moving walls, ~20% of the turn).
+-- During a player's turn (engine.input) these calls are noted; at the end every joined-up unit they would have
+-- recomputed is recomputed once, against the final positions: a frame depends only on what's around it then, and
+-- nothing in the game reads these frames during a turn (only animated objects' frames, which aren't joined-up).
+-- Calls with extra names to join with run at once.
+local function deferred_tiling(game_dynamic, game_dynamicat)
+	local active, ids, idlist, spots, spotlist = false, {}, {}, {}, {}
+
+	local function dynamic(id, extra_)
+		if not active or extra_ ~= nil then return game_dynamic(id, extra_) end
+		if not ids[id] then
+			ids[id] = true
+			idlist[#idlist + 1] = id
+		end
+	end
+
+	local function dynamicat(x, y)
+		if not active then return game_dynamicat(x, y) end
+		local k = x .. "," .. y
+		if not spots[k] then
+			spots[k] = true
+			spotlist[#spotlist + 1] = { x, y }
+		end
+	end
+
+	local function finish()
+		active = false
+		local todo, order = {}, {} -- unit id -> where to compute its frame (as the game would), in first-seen order
+		local function mark(id, x, y)
+			if not todo[id] then
+				todo[id] = { x, y }
+				order[#order + 1] = id
+			end
+		end
+		local n = specialtiling.exists ~= nil and 8 or 4 -- neighbours, as in dynamic() and dynamicat()
+		-- dynamic(id): the unit itself and joined-up neighbours with its name, if it's joined-up
+		for _, id in ipairs(idlist) do
+			local u = engine.objects[id] -- skips units removed meanwhile
+			if u and u.values[TILING] == 1 then
+				local x, y, name = u.values[XPOS], u.values[YPOS], u.strings[UNITNAME]
+				mark(id, x, y)
+				for i = 1, n do
+					local v = dirs_diagonals_[i]
+					local tx, ty = x + v[1], y + v[2]
+					local here = unitmap[tx + ty * roomsizex]
+					if (here ~= nil) and inbounds(tx, ty) then
+						for _, b in ipairs(here) do
+							local t = mmf.newObject(b)
+							if (t.strings[UNITNAME] == name) and (t.values[TILING] == 1) then mark(b, tx, ty) end
+						end
+					end
+				end
+			end
+		end
+		-- dynamicat(x, y): every joined-up unit next to x, y
+		for _, p in ipairs(spotlist) do
+			for i = 1, n do
+				local v = dirs_diagonals_[i]
+				local tx, ty = p[1] + v[1], p[2] + v[2]
+				if inbounds(tx, ty) then
+					for _, b in ipairs(unitmap[tx + ty * roomsizex] or {}) do
+						if mmf.newObject(b).values[TILING] == 1 then mark(b, tx, ty) end
+					end
+				end
+			end
+		end
+		for _, id in ipairs(order) do
+			local t, at = mmf.newObject(id), todo[id]
+			t.direction, t.flags[SPECIALTILING] = dynamictile(id, at[1], at[2], t.strings[UNITNAME])
+			t.values[VISUALDIR] = t.direction
+		end
+		ids, idlist, spots, spotlist = {}, {}, {}, {}
+	end
+
+	return dynamic, dynamicat, function() active = true end, finish
+end
+
 -- Replaces game functions with faster ones that behave the same. Called after the game's scripts load and before
 -- mods, so a mod's own version of a function still wins. engine.game keeps the originals (for the tests).
 function engine.speedups()
 	if engine.game then return end
-	engine.game = { hasfeature = hasfeature, addundo = addundo, dynamictile = dynamictile, findfeature = findfeature }
+	local dyn, dynat, begin, finish = deferred_tiling(dynamic, dynamicat)
+	engine.game = { hasfeature = hasfeature, addundo = addundo, dynamictile = dynamictile, findfeature = findfeature,
+		dynamic = dynamic, dynamicat = dynamicat }
 	engine.fast = { hasfeature = fast_hasfeature(hasfeature), addundo = fast_addundo(addundo),
-		dynamictile = fast_dynamictile(dynamictile), findfeature = fast_findfeature(findfeature) }
+		dynamictile = fast_dynamictile(dynamictile), findfeature = fast_findfeature(findfeature),
+		dynamic = dyn, dynamicat = dynat }
 	for name, f in pairs(engine.fast) do _G[name] = f end
+	-- a turn defers the tiling calls (with the game's own dynamic/dynamicat installed, nothing is deferred)
+	local input = engine.input_
+	engine.input_ = function(key)
+		begin()
+		local ok, err = xpcall(input, debug.traceback, key)
+		finish()
+		if not ok then error(err, 0) end
+	end
 end
 
 ---------------------------------------------------------------- benchmark

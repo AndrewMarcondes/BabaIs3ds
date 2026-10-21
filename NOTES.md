@@ -124,6 +124,10 @@ Source: Steam Mac install, `Baba Is You.app/Contents/Resources/Data/`. Never com
   the previous version: identical draw lists on every level (310k lines: start, moves, ticks) and 120 identical host
   renders (at rest and mid-slide). 3DS at 268MHz, draw list per move: level 5 34 -> 18ms, main map 23 -> 11ms;
   allocations per move on level 5 94 -> 39KB. Per move at 268MHz now: level 5 ~42 + 18 + 14ms, main map ~16 + 11 + 6ms.
+- Joined-up objects (walls): during a turn the game's dynamic/dynamicat calls are only noted, and at the end every
+  unit they would have touched is recomputed once from the final positions (nothing reads these frames mid-turn; with
+  50 moving walls the game recomputed ~210 frames per turn). WALL IS YOU Lua per move: 268MHz 288 -> 258ms, 804MHz
+  69 -> 61ms; host -32% vs the game's code. In engine.speedups, so test/speedups_test.lua covers it.
 
 ## Level packs / mods
 - engine.boot(world): WORLD = pack folder, BASEWORLD = "baba"; world_data.txt from that pack.
