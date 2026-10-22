@@ -170,8 +170,9 @@ endif
 
 .PHONY: all clean
 
-# build/dev.flag holds the last DEV; rewritten only when it changes, so switching DEV recompiles what depends on it
-$(shell mkdir -p $(BUILD); echo $(DEV) | cmp -s - $(BUILD)/dev.flag || echo $(DEV) > $(BUILD)/dev.flag)
+# build/flags.txt holds the last VERSION and DEV; rewritten only when they change, so a version bump or switching DEV
+# recompiles what uses them
+$(shell mkdir -p $(BUILD); echo "$(VERSION) $(DEV)" | cmp -s - $(BUILD)/flags.txt || echo "$(VERSION) $(DEV)" > $(BUILD)/flags.txt)
 
 #---------------------------------------------------------------------------------
 all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES)
@@ -211,7 +212,7 @@ $(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
 
 $(OFILES_SOURCES) : $(HFILES)
 
-main.o : $(DEPSDIR)/dev.flag
+main.o : $(DEPSDIR)/flags.txt
 
 $(OUTPUT).elf	:	$(OFILES)
 
