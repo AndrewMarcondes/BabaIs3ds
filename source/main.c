@@ -1,5 +1,14 @@
 #include <3ds.h>
+#include <arpa/inet.h>
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <malloc.h>
+#include <netdb.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -392,11 +401,143 @@ static void engine_do(lua_State *L, const char *fn) {
     script_call(L, 0, 0);
 }
 
+//---------------------------------------------------------------------------- benchmark upload
+
+// If UPLOAD_FILE holds a URL (tools/bench_receiver.py on your own network), the benchmark report is also posted there
+// when Wi-Fi is connected; it's always written to TIMING_FILE. A plain HTTP/1.0 POST over a socket, every step with a
+// timeout, so a missing receiver or a bad network can't hang the game. Returns a line for the summary, or NULL if not
+// set up.
+#define UPLOAD_FILE "sdmc:/3ds/baba/upload.txt"
+#define UPLOAD_TIMEOUT_MS 3000
+#define SOC_SIZE 0x40000
+
+// Connects a non-blocking socket within UPLOAD_TIMEOUT_MS; 0 if connected. A connect in progress may report
+// EINPROGRESS, EALREADY or EAGAIN (Azahar), and poll's flags vary, so once poll says something happened, connect is
+// asked again: 0 or EISCONN means connected.
+static int connect_timeout(int fd, const struct sockaddr_in *addr) {
+    if (connect(fd, (const struct sockaddr *)addr, sizeof *addr) == 0) return 0;
+    if (errno != EINPROGRESS && errno != EALREADY && errno != EAGAIN) return -1;
+    struct pollfd pfd = {fd, POLLOUT, 0};
+    if (poll(&pfd, 1, UPLOAD_TIMEOUT_MS) != 1) return -1;
+    if (connect(fd, (const struct sockaddr *)addr, sizeof *addr) == 0 || errno == EISCONN) return 0;
+    return -1;
+}
+
+// Waits until fd is ready for events; 0 if it is, -1 on timeout or error.
+static int wait_fd(int fd, short events) {
+    struct pollfd pfd = {fd, events, 0};
+    return poll(&pfd, 1, UPLOAD_TIMEOUT_MS) == 1 && (pfd.revents & events) ? 0 : -1;
+}
+
+// POSTs body to http://host[:port]/path; returns the HTTP status, or -1 if there was no answer.
+static int http_post(const char *url, const char *body, int n) {
+    char host[128], path[128] = "/";
+    int port = 80;
+    const char *h = url + 7, *slash = strchr(h, '/');
+    int hl = slash ? slash - h : (int)strlen(h);
+    if (hl <= 0 || hl >= (int)sizeof host) return -1;
+    memcpy(host, h, hl);
+    host[hl] = 0;
+    if (slash) snprintf(path, sizeof path, "%s", slash);
+    char *colon = strchr(host, ':');
+    if (colon) {
+        *colon = 0;
+        port = atoi(colon + 1);
+    }
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if (!inet_aton(host, &addr.sin_addr)) {
+        struct hostent *he = gethostbyname(host);
+        if (!he || !he->h_addr_list[0]) return -1;
+        memcpy(&addr.sin_addr, he->h_addr_list[0], sizeof addr.sin_addr);
+    }
+    int fd = socket(AF_INET, SOCK_STREAM, 0), status = -1;
+    if (fd < 0) return -1;
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    if (!connect_timeout(fd, &addr)) {
+        char head[384];
+        int hn = snprintf(head, sizeof head,
+                          "POST %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: baba3ds/" VERSION "\r\nContent-Type: text/plain\r\n"
+                          "Content-Length: %d\r\nConnection: close\r\n\r\n", path, host, n);
+        const char *parts[2] = {head, body};
+        int lens[2] = {hn, n}, ok = 1;
+        for (int p = 0; p < 2 && ok; p++)
+            for (int sent = 0; sent < lens[p] && ok;) {
+                int r = send(fd, parts[p] + sent, lens[p] - sent, 0);
+                if (r > 0) sent += r;
+                else ok = r < 0 && errno == EAGAIN && !wait_fd(fd, POLLOUT);
+            }
+        char reply[64] = "";
+        int got = 0;
+        while (ok && got < (int)sizeof reply - 1 && !strchr(reply, '\n')) { // just the status line
+            reply[got] = 0;
+            if (wait_fd(fd, POLLIN)) break;
+            int r = recv(fd, reply + got, sizeof reply - 1 - got, 0);
+            if (r <= 0) break;
+            got += r;
+            reply[got] = 0;
+        }
+        if (got > 9 && !strncmp(reply, "HTTP/1.", 7)) status = atoi(reply + 9);
+    }
+    close(fd);
+    return status;
+}
+
+static const char *upload_report(const char *text, char *status, int len) {
+    char url[256];
+    FILE *f = fopen(UPLOAD_FILE, "r");
+    if (!f) return NULL;
+    if (!fgets(url, sizeof url, f)) url[0] = 0;
+    fclose(f);
+    url[strcspn(url, " \r\n")] = 0;
+    if (strncmp(url, "http://", 7)) {
+        snprintf(status, len, "Not uploaded: upload.txt needs http://");
+        return status;
+    }
+    u32 wifi = 0;
+    if (R_SUCCEEDED(acInit())) {
+        ACU_GetWifiStatus(&wifi);
+        acExit();
+    }
+    if (!wifi) {
+        snprintf(status, len, "Not uploaded: Wi-Fi is off");
+        return status;
+    }
+    u32 *soc = memalign(0x1000, SOC_SIZE);
+    if (!soc || R_FAILED(socInit(soc, SOC_SIZE))) {
+        free(soc);
+        snprintf(status, len, "Not uploaded: no network service");
+        return status;
+    }
+    int code = http_post(url, text, strlen(text));
+    socExit();
+    free(soc);
+    int hl = strcspn(url + 7, "/"); // host[:port], for the message
+    if (hl > 30) hl = 30;
+    if (code < 0) snprintf(status, len, "Upload failed: no answer from %.*s", hl, url + 7);
+    else if (code != 200) snprintf(status, len, "Upload failed: HTTP %d from %.*s", code, hl, url + 7);
+    else snprintf(status, len, "Uploaded to %.*s", hl, url + 7);
+    return status;
+}
+
+static char report[4096]; // the benchmark's lines, for TIMING_FILE and the upload
+static int nreport;
+
+static void report_add(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(report + nreport, sizeof report - nreport, fmt, ap);
+    va_end(ap);
+    if (n > 0) nreport += n < (int)sizeof report - nreport ? n : (int)sizeof report - 1 - nreport;
+}
+
 static void benchmark(lua_State *L) {
-    FILE *log = T.log ? T.log : fopen(TIMING_FILE, "a");
     int mhz = n3ds && fast ? 804 : 268, stop = 0;
-    if (log) fprintf(log, "# benchmark v%s on a%s 3DS at %dMHz: per move lua_ms (mean median max), list_ms, draw_ms\n",
-                     VERSION, n3ds ? " New" : "n Old", mhz);
+    nreport = 0;
+    report[0] = 0;
+    report_add("# benchmark v%s on a%s 3DS at %dMHz: per move lua_ms (mean median max), list_ms, draw_ms\n", VERSION,
+               n3ds ? " New" : "n Old", mhz);
     char summary[1024];
     int sn = snprintf(summary, sizeof summary, "\x1b[33mBenchmark at %dMHz\x1b[0m (ms of Lua per move,\nmedian: GC between moves / none)\n\n", mhz);
     engine_do(L, "benchbegin");
@@ -440,20 +581,26 @@ static void benchmark(lua_State *L) {
             for (int i = 0; i < k; i++) if (lua[i] > lmax) lmax = lua[i];
             float lmed = median(lua, k);
             med[gc] = lmed;
-            if (log) {
-                fprintf(log, "bench \"%s\" GC %s, %d moves: lua %.1f %.1f %.1f, list %.1f, draw %.1f", name,
-                        gc ? "none" : "between moves", k, lmean, lmed, lmax, mean(list, k), mean(draw, k));
-                if (gc) fprintf(log, ", allocates %.0fKB per move", kb / k);
-                fprintf(log, "\n");
-            }
+            report_add("bench \"%s\" GC %s, %d moves: lua %.1f %.1f %.1f, list %.1f, draw %.1f", name,
+                       gc ? "none" : "between moves", k, lmean, lmed, lmax, mean(list, k), mean(draw, k));
+            if (gc) report_add(", allocates %.0fKB per move", kb / k);
+            report_add("\n");
         }
         sn += snprintf(summary + sn, sizeof summary - sn, "%s\n  %.1f / %.1f\n", name, med[0], med[1]);
     }
     engine_do(L, "benchend");
-    if (log && log != T.log) fclose(log);
-    else if (log) fflush(log);
+    FILE *log = T.log ? T.log : fopen(TIMING_FILE, "a");
+    if (log) {
+        fputs(report, log);
+        if (log != T.log) fclose(log);
+        else fflush(log);
+    }
+    printf("\x1b[2J\x1b[H%s\n%sUploading...", summary, stop ? "(stopped early)\n" : "");
+    char status[96];
+    const char *up = upload_report(report, status, sizeof status);
     shown[0] = 0;
-    printf("\x1b[2J\x1b[H%s\n%sWritten to /3ds/baba/timing.txt\n\nPress A", summary, stop ? "(stopped early)\n" : "");
+    printf("\x1b[2J\x1b[H%s\n%sWritten to /3ds/baba/timing.txt\n%s%s\nPress A", summary, stop ? "(stopped early)\n" : "",
+           up ? up : "", up ? "\n" : "");
     while (aptMainLoop()) {
         hidScanInput();
         if (hidKeysDown() & (KEY_A | KEY_B | KEY_START)) break;

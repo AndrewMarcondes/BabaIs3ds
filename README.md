@@ -84,6 +84,13 @@ Progress is saved to `sdmc:/3ds/baba/save.ini`.
     build-host/script_test <path to Data> test/bench_test.lua       # the pause menu benchmark leaves the game and save as they were
     build-host/render_test <path to Data> out.ppm [save.ini] [keys...] ["=100level"]  # boot with a save, play keys or jump to a level, render
 
+Benchmark (pause menu > Benchmark): plays fixed moves on a few levels and writes per-move times to
+`sdmc:/3ds/baba/timing.txt`. To also get them over Wi-Fi, run the receiver on a computer on your network and put its
+URL on the first line of `sdmc:/3ds/baba/upload.txt`; when Wi-Fi is on, the report is posted there (plain HTTP, local
+network only, a few seconds' timeout) and appended to `build-host/bench_results.txt`:
+
+    tools/bench_receiver.py [file] [port]        # e.g. upload.txt: http://192.168.1.20:8001/bench
+
 Emulator screenshot (Azahar running with RPC server enabled; copy AzaharRPC.py from Azahar's scripting/ folder into tools/):
 
     python3 tools/emu_shot.py build-host/emu
