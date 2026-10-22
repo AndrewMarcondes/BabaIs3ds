@@ -43,6 +43,10 @@ ROMFS		:=	romfs
 APP_TITLE	:=	baba3ds
 # VERSION (major.minor) is shown on the title screen and stamped into the .cia; tag releases v<VERSION>
 VERSION		:=	0.2
+# DEV=1: developer build. Adds the pause menu's Fast mode, Timing log and Benchmark (with its Wi-Fi upload) and shows
+# the version as "<VERSION>-dev". On by default only on the develop branch, so main and release tags build what players
+# get. Override with make DEV=0 or make DEV=1.
+DEV		?=	$(if $(filter develop,$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)),1,0)
 APP_DESCRIPTION	:=	Baba Is You on 3DS (uses your own game files)
 APP_AUTHOR	:=	baba3ds
 ICON		:=	meta/icon.png
@@ -56,7 +60,7 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 			-ffunction-sections \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -D__3DS__ -DLUA_COMPAT_5_2 -DVERSION=\"$(VERSION)\"  # game scripts use math.atan2 etc., like the original build
+CFLAGS	+=	$(INCLUDE) -D__3DS__ -DLUA_COMPAT_5_2 -DVERSION=\"$(VERSION)$(if $(filter 1,$(DEV)),-dev)\" -DDEV_BUILD=$(if $(filter 1,$(DEV)),1,0)  # game scripts use math.atan2 etc., like the original build
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
@@ -166,6 +170,9 @@ endif
 
 .PHONY: all clean
 
+# build/dev.flag holds the last DEV; rewritten only when it changes, so switching DEV recompiles what depends on it
+$(shell mkdir -p $(BUILD); echo $(DEV) | cmp -s - $(BUILD)/dev.flag || echo $(DEV) > $(BUILD)/dev.flag)
+
 #---------------------------------------------------------------------------------
 all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
@@ -203,6 +210,8 @@ else
 $(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
 
 $(OFILES_SOURCES) : $(HFILES)
+
+main.o : $(DEPSDIR)/dev.flag
 
 $(OUTPUT).elf	:	$(OFILES)
 

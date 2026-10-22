@@ -269,14 +269,24 @@ static void transition(lua_State *L, int wobble) {
     draw_level(wobble, 1, 256);
 }
 
-enum { P_RESUME, P_RESTART, P_LEAVE, P_FAST, P_TIMING, P_BENCH, P_TITLE, P_QUIT, PAUSE_ITEMS };
+enum { P_RESUME, P_RESTART, P_LEAVE, P_FAST, P_TIMING, P_BENCH, P_TITLE, P_QUIT, P_COUNT };
+
+// The pause menu's items in order. Fast mode, Timing and Benchmark are developer tools: only in DEV builds (Makefile).
+static const int pause_ids[] = {P_RESUME, P_RESTART, P_LEAVE,
+#if DEV_BUILD
+                                P_FAST, P_TIMING, P_BENCH,
+#endif
+                                P_TITLE, P_QUIT};
+#define PAUSE_ITEMS ((int)(sizeof pause_ids / sizeof *pause_ids))
 
 static void show_pause(int sel) {
     static char fast_item[32], timing_item[48];
     snprintf(fast_item, sizeof fast_item, "Fast mode: %s", !n3ds ? "n/a (Old 3DS)" : fast ? "on (804MHz)" : "off (268MHz)");
     snprintf(timing_item, sizeof timing_item, "Timing: %s", T.on ? "on (logs /3ds/baba/timing.txt)" : "off");
-    const char *items[PAUSE_ITEMS] = {"Resume", "Restart level", "Return to map", fast_item, timing_item,
-                                      "Benchmark (1-2 min, restarts level)", "Title screen", "Quit game"};
+    const char *labels[P_COUNT] = {"Resume", "Restart level", "Return to map", fast_item, timing_item,
+                                   "Benchmark (1-2 min, restarts level)", "Title screen", "Quit game"};
+    const char *items[PAUSE_ITEMS];
+    for (int i = 0; i < PAUSE_ITEMS; i++) items[i] = labels[pause_ids[i]];
     show_list("Paused", items, PAUSE_ITEMS, sel, "Up/Down choose   A select   B/START back");
 }
 
@@ -346,6 +356,7 @@ static void gc_before_move(lua_State *L) {
 }
 
 //---------------------------------------------------------------------------- benchmark
+#if DEV_BUILD // the benchmark and its upload are left out of player builds
 
 // Pause menu > Benchmark: plays each scenario of engine.benchmarks (shim) BENCH_REPS times with the garbage collector
 // as in play (BENCH_IDLE passes without input after each move, see gc_idle), then BENCH_REPS_GC times without it (to
@@ -607,6 +618,7 @@ static void benchmark(lua_State *L) {
         wait_frame();
     }
 }
+#endif // DEV_BUILD
 
 // Plays until the player quits or goes back to the title screen.
 static int play(lua_State *L) {
@@ -623,22 +635,25 @@ static int play(lua_State *L) {
         if (paused) {
             if (list_input(rep, &sel, PAUSE_ITEMS)) show_pause(sel);
             if (down & KEY_A) {
-                if (sel == P_TITLE) return TITLE;
-                if (sel == P_QUIT) return QUIT;
-                if (sel == P_FAST || sel == P_TIMING) { // toggles: stay in the menu
-                    if (sel == P_FAST && n3ds) {
+                int id = pause_ids[sel];
+                if (id == P_TITLE) return TITLE;
+                if (id == P_QUIT) return QUIT;
+                if (id == P_FAST || id == P_TIMING) { // toggles: stay in the menu
+                    if (id == P_FAST && n3ds) {
                         fast = !fast;
                         osSetSpeedupEnable(fast);
                         if (T.log) fprintf(T.log, "# fast mode %s\n", fast ? "on" : "off");
                     }
-                    if (sel == P_TIMING) timing_set(!T.on);
+                    if (id == P_TIMING) timing_set(!T.on);
                     show_pause(sel);
-                } else if (sel == P_BENCH) {
+#if DEV_BUILD
+                } else if (id == P_BENCH) {
                     benchmark(L);
                     paused = 0;
                     benched = 1; // it left the player at the start of their level: draw it again
+#endif
                 } else {
-                    key = sel == P_RESTART ? "restart" : sel == P_LEAVE ? "leave" : NULL;
+                    key = id == P_RESTART ? "restart" : id == P_LEAVE ? "leave" : NULL;
                     paused = 0;
                 }
             } else if (down & (KEY_B | KEY_START)) paused = 0;

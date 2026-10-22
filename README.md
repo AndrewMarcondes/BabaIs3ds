@@ -18,13 +18,19 @@ Needs devkitPro with `3ds-dev 3ds-zlib 3ds-libvorbisidec`.
 
     make
 
+Branches: `main` holds released, hardware-tested builds; day-to-day work goes on `develop`. Building on `develop`
+makes a developer build (version shown as `0.2-dev`) whose pause menu adds Fast mode, Timing (per-turn log in
+`sdmc:/3ds/baba/timing.txt`) and Benchmark (with its Wi-Fi upload). Builds anywhere else leave those out.
+Override with `make DEV=1` or `make DEV=0`.
+
 ## Install over Wi-Fi while developing
 `tools/serve_cia.sh` shares your freshly built `baba3ds.cia` on your network (only that file, only while
 it runs) and prints a QR code to scan with FBI's Remote Install.
 
 ## Making a release
 `main` holds builds tested on real hardware; new work goes on a branch until tested. To release:
-1. Set `VERSION` in the Makefile, `tools/make_cia.sh` on tested `main`, then on GitHub: Releases → Draft a new
+1. Merge `develop` into `main`, set `VERSION` in the Makefile, `tools/make_cia.sh` on tested `main` (check the title
+   screen shows no `-dev`), then on GitHub: Releases → Draft a new
    release → tag `v<VERSION>`.
 2. Attach `baba3ds.cia` and `baba3ds.3dsx` with exactly those names (the QR code links to
    `releases/latest/download/baba3ds.cia`). Never attach game data.
@@ -84,7 +90,7 @@ Progress is saved to `sdmc:/3ds/baba/save.ini`.
     build-host/script_test <path to Data> test/bench_test.lua       # the pause menu benchmark leaves the game and save as they were
     build-host/render_test <path to Data> out.ppm [save.ini] [keys...] ["=100level"]  # boot with a save, play keys or jump to a level, render
 
-Benchmark (pause menu > Benchmark): plays fixed moves on a few levels and writes per-move times to
+Benchmark (developer builds only, pause menu > Benchmark): plays fixed moves on a few levels and writes per-move times to
 `sdmc:/3ds/baba/timing.txt`. To also get them over Wi-Fi, run the receiver on a computer on your network and put its
 URL on the first line of `sdmc:/3ds/baba/upload.txt`; when Wi-Fi is on, the report is posted there (plain HTTP, local
 network only, a few seconds' timeout) and appended to `build-host/bench_results.txt`:
