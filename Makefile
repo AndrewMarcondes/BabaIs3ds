@@ -42,7 +42,7 @@ ROMFS		:=	romfs
 #GFXBUILD	:=	$(ROMFS)/gfx
 APP_TITLE	:=	baba3ds
 # VERSION (major.minor) is shown on the title screen and stamped into the .cia; tag releases v<VERSION>
-VERSION		:=	0.2
+VERSION		:=	0.3
 # DEV=1: developer build. Adds the pause menu's Fast mode, Timing log and Benchmark (with its Wi-Fi upload) and shows
 # the version as "<VERSION>-dev". On by default only on the develop branch, so main and release tags build what players
 # get. Override with make DEV=0 or make DEV=1.
